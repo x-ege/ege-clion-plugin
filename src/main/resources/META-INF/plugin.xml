@@ -1,0 +1,27 @@
+<idea-plugin>
+    <id>org.xege.ideaplugin</id>
+    <name>Xege IntelliJ Plugin</name>
+    <version>1.0-SNAPSHOT</version>
+    <vendor email="your@email.com" url="https://github.com/yourrepo">Xege</vendor>
+    <description>
+        一个用于 IntelliJ IDEA 系列 IDE 的示例插件，兼容 CLion、IDEA、PyCharm 等。
+        提供丰富的用户交互和日志输出功能。
+    </description>
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- 注册通知组 -->
+        <notificationGroup id="Xege Plugin Notifications" displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <action id="org.xege.MyPluginAction"
+                class="org.xege.MyPluginAction"
+                text="🚀 Xege Action"
+                description="激活 Xege 插件功能，显示详细的运行信息">
+            <add-to-group group-id="MainMenu" anchor="last"/>
+            <!-- 也添加到工具菜单中，更容易找到 -->
+            <add-to-group group-id="ToolsMenu" anchor="first"/>
+        </action>
+    </actions>
+</idea-plugin>
