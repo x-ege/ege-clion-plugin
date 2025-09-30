@@ -16,7 +16,7 @@ dependencies {
 
 intellij {
     version.set("2023.3")
-    type.set("IC") // IntelliJ IDEA Community，更稳定
+    type.set("CL") // CLion
 }
 
 tasks.patchPluginXml {

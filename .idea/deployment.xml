@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" remoteFilesAllowedToDisappearOnAutoupload="false">
+    <serverData>
+      <paths name="yyyyy.tech (41f4be50-25ad-46e3-8611-081f7a06fd2d)">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$/src/test" web="/" />
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+    </serverData>
+  </component>
+</project>
