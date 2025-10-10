@@ -1,0 +1,3 @@
+<idea-plugin>
+    <!-- CLion 特定的扩展 - 复用 DirectoryProjectGenerator -->
+</idea-plugin>

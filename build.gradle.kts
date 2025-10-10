@@ -33,6 +33,13 @@ tasks {
     buildSearchableOptions {
         enabled = false
     }
+    
+    // 将 assets 目录复制到 resources 中
+    processResources {
+        from("assets") {
+            into("assets")
+        }
+    }
 }
 
 tasks.test {

@@ -7,14 +7,30 @@
         一个用于 IntelliJ IDEA 系列 IDE 的示例插件，兼容 CLion、IDEA、PyCharm 等。
         提供丰富的用户交互和日志输出功能。
     </description>
+    
     <depends>com.intellij.modules.platform</depends>
+    <!-- CLion C/C++ 支持 -->
+    <depends optional="true" config-file="clion-only.xml">com.intellij.modules.clion</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <!-- 注册通知组 -->
         <notificationGroup id="Xege Plugin Notifications" displayType="BALLOON"/>
+        
+        <!-- 注册项目模板 -->
+        <directoryProjectGenerator implementation="org.xege.project.EgeProjectGenerator"/>
     </extensions>
 
     <actions>
+        <!-- EGE 项目创建 Action -->
+        <action id="org.xege.CreateEgeProject"
+                class="org.xege.project.CreateEgeProjectAction"
+                text="New EGE Project..."
+                description="Create a new EGE C++ project">
+            <add-to-group group-id="WelcomeScreen.QuickStart" anchor="after" relative-to-action="WelcomeScreen.CreateNewProject"/>
+            <add-to-group group-id="FileMenu" anchor="after" relative-to-action="NewProject"/>
+        </action>
+        
+        <!-- 测试 Action -->
         <action id="org.xege.MyPluginAction"
                 class="org.xege.MyPluginAction"
                 text="🚀 Xege Action"

@@ -1,0 +1,30 @@
+cmake_minimum_required(VERSION 3.13)
+
+set(MY_PROJECT_NAME ege-demo)
+set(MY_TARGET_NAME ege-demo)
+
+add_subdirectory(ege)
+
+project(${MY_PROJECT_NAME} LANGUAGES CXX)
+
+file(GLOB DEMO_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+
+message("DEMO_SOURCE: ${DEMO_SOURCE}")
+
+add_executable(${MY_TARGET_NAME} ${DEMO_SOURCE})
+
+target_include_directories(${MY_TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ege/include)
+
+target_link_libraries(${MY_TARGET_NAME} PRIVATE xege)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    target_compile_options(${MY_TARGET_NAME} PRIVATE -D_FORTIFY_SOURCE=0)
+    target_link_options(${MY_TARGET_NAME} PRIVATE -mwindows -static -static-libgcc -static-libstdc++)
+    target_link_libraries(${MY_TARGET_NAME} PRIVATE gdiplus gdi32 imm32 msimg32 ole32 oleaut32 winmm uuid strmiids)
+endif()
+
+if(MSVC)
+    target_compile_options(${MY_TARGET_NAME} PRIVATE
+        /source-charset:utf-8
+    )
+endif()
