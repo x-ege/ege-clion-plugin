@@ -3,6 +3,7 @@
     <name>Xege IntelliJ Plugin</name>
     <version>1.0-SNAPSHOT</version>
     <vendor email="your@email.com" url="https://github.com/yourrepo">Xege</vendor>
+    
     <description>
         一个用于 IntelliJ IDEA 系列 IDE 的示例插件，兼容 CLion、IDEA、PyCharm 等。
         提供丰富的用户交互和日志输出功能。

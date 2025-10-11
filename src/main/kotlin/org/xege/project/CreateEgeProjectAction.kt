@@ -8,10 +8,13 @@ import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.vfs.VfsUtil
 import java.io.File
-import javax.swing.Icon
-import javax.swing.ImageIcon
+import javax.swing.JCheckBox
+import javax.swing.JComponent
+import javax.swing.JPanel
+import java.awt.BorderLayout
 
 /**
  * 创建 EGE 项目的 Action
@@ -20,27 +23,14 @@ import javax.swing.ImageIcon
 class CreateEgeProjectAction : AnAction() {
     private val logger = Logger.getInstance(CreateEgeProjectAction::class.java)
     
-    init {
-        // 设置图标
-        try {
-            val imageUrl = javaClass.getResource("/assets/logo.png")
-            if (imageUrl != null) {
-                templatePresentation.icon = ImageIcon(imageUrl)
-            }
-        } catch (e: Exception) {
-            logger.warn("Failed to load action icon", e)
-        }
-    }
-    
     override fun actionPerformed(e: AnActionEvent) {
         logger.info("CreateEgeProjectAction triggered")
         
-        // 询问项目位置
+        // 显示文件选择器
         val descriptor = FileChooserDescriptorFactory.createSingleFolderDescriptor()
         descriptor.title = "Select Location for EGE Project"
         descriptor.description = "Choose where to create your EGE project"
         
-        // 显示文件选择器
         val chooser = com.intellij.openapi.fileChooser.FileChooser.chooseFile(
             descriptor,
             e.project,
@@ -58,22 +48,53 @@ class CreateEgeProjectAction : AnAction() {
         // 检查目录是否为空
         val dir = File(projectPath)
         if (dir.exists() && dir.listFiles()?.isNotEmpty() == true) {
-            val result = Messages.showYesNoDialog(
+            val confirmResult = Messages.showYesNoDialog(
                 e.project,
                 "The selected directory is not empty. Continue anyway?",
                 "Directory Not Empty",
                 Messages.getWarningIcon()
             )
-            if (result != Messages.YES) {
+            if (confirmResult != Messages.YES) {
                 return
             }
         }
         
+        // 显示选项对话框
+        val dialog = ProjectOptionsDialog(e.project)
+        if (!dialog.showAndGet()) {
+            logger.info("User cancelled project creation")
+            return
+        }
+        
+        val useSourceCode = dialog.useSourceCode
+        logger.info("Use source code option: $useSourceCode")
+        
         // 创建项目
-        createEgeProject(projectPath)
+        createEgeProject(projectPath, useSourceCode)
     }
     
-    private fun createEgeProject(projectPath: String) {
+    /**
+     * 项目选项对话框
+     */
+    private class ProjectOptionsDialog(project: com.intellij.openapi.project.Project?) : DialogWrapper(project) {
+        private val useSourceCheckBox = JCheckBox("直接使用 EGE 源码作为项目依赖", false)
+        
+        val useSourceCode: Boolean
+            get() = useSourceCheckBox.isSelected
+        
+        init {
+            title = "EGE Project Options"
+            init()
+        }
+        
+        override fun createCenterPanel(): JComponent {
+            val panel = JPanel(BorderLayout())
+            panel.add(useSourceCheckBox, BorderLayout.CENTER)
+            return panel
+        }
+    }
+    
+    private fun createEgeProject(projectPath: String, useSourceCode: Boolean) {
         ProgressManager.getInstance().run(object : Task.Backgroundable(null, "Creating EGE Project...", false) {
             override fun run(indicator: ProgressIndicator) {
                 indicator.isIndeterminate = false
@@ -90,12 +111,12 @@ class CreateEgeProjectAction : AnAction() {
                     // 复制 CMake 模板文件
                     indicator.fraction = 0.2
                     indicator.text = "Copying CMake templates..."
-                    copyCMakeTemplateFiles(targetDir)
+                    copyCMakeTemplateFiles(targetDir, useSourceCode)
                     
                     // 复制 EGE 库文件
                     indicator.fraction = 0.5
                     indicator.text = "Copying EGE library..."
-                    copyEgeBundle(targetDir, indicator)
+                    copyEgeBundle(targetDir, indicator, useSourceCode)
                     
                     indicator.fraction = 0.9
                     indicator.text = "Finalizing..."
@@ -128,11 +149,15 @@ class CreateEgeProjectAction : AnAction() {
     
     /**
      * 复制 CMake 模板文件
+     * @param targetDir 目标目录
+     * @param useSourceCode 是否使用源码版本
      */
-    private fun copyCMakeTemplateFiles(targetDir: File) {
+    private fun copyCMakeTemplateFiles(targetDir: File, useSourceCode: Boolean) {
+        // 根据选项决定使用哪个 CMakeLists 模板
+        val cmakeTemplate = if (useSourceCode) "CMakeLists_src.txt" else "CMakeLists_lib.txt"
+        
         val templateFiles = mapOf(
-            "CMakeLists_src.txt" to "CMakeLists.txt",
-            "CMakeLists_lib.txt" to "ege/CMakeLists.txt",
+            cmakeTemplate to "CMakeLists.txt",
             "main.cpp" to "main.cpp"
         )
         
@@ -157,13 +182,19 @@ class CreateEgeProjectAction : AnAction() {
     
     /**
      * 复制 EGE 库文件
+     * @param targetDir 目标目录
+     * @param indicator 进度指示器
+     * @param useSourceCode 是否使用源码版本(如果是源码版本，需要复制 ege_src，否则复制 ege_bundle)
      */
-    private fun copyEgeBundle(targetDir: File, indicator: ProgressIndicator) {
+    private fun copyEgeBundle(targetDir: File, indicator: ProgressIndicator, useSourceCode: Boolean) {
         val egeDir = File(targetDir, "ege")
         egeDir.mkdirs()
         
+        // 根据选项决定复制哪个目录
+        val bundlePath = if (useSourceCode) "/assets/ege_src" else "/assets/ege_bundle"
+        
         // 递归复制资源
-        copyResourceDirectory("/assets/ege_bundle", egeDir, indicator)
+        copyResourceDirectory(bundlePath, egeDir, indicator)
     }
     
     /**
