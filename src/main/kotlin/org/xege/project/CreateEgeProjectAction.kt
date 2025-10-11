@@ -2,6 +2,7 @@ package org.xege.project
 
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.progress.ProgressIndicator
@@ -130,18 +131,24 @@ class CreateEgeProjectAction : AnAction() {
                     
                     logger.info("EGE project created successfully at: $projectPath")
                     
-                    // 显示成功消息
-                    Messages.showInfoMessage(
-                        "EGE project created successfully at:\n$projectPath\n\nYou can open it using File → Open...",
-                        "Project Created"
-                    )
+                    // 在 EDT 线程上显示成功消息
+                    ApplicationManager.getApplication().invokeLater {
+                        Messages.showInfoMessage(
+                            "EGE project created successfully at:\n$projectPath\n\nYou can open it using File → Open...",
+                            "Project Created"
+                        )
+                    }
                     
                 } catch (e: Exception) {
                     logger.error("Failed to create EGE project", e)
-                    Messages.showErrorDialog(
-                        "Failed to create EGE project: ${e.message}",
-                        "Error"
-                    )
+                    
+                    // 在 EDT 线程上显示错误消息
+                    ApplicationManager.getApplication().invokeLater {
+                        Messages.showErrorDialog(
+                            "Failed to create EGE project: ${e.message}",
+                            "Error"
+                        )
+                    }
                 }
             }
         })
@@ -153,29 +160,72 @@ class CreateEgeProjectAction : AnAction() {
      * @param useSourceCode 是否使用源码版本
      */
     private fun copyCMakeTemplateFiles(targetDir: File, useSourceCode: Boolean) {
-        // 根据选项决定使用哪个 CMakeLists 模板
-        val cmakeTemplate = if (useSourceCode) "CMakeLists_src.txt" else "CMakeLists_lib.txt"
-        
-        val templateFiles = mapOf(
-            cmakeTemplate to "CMakeLists.txt",
-            "main.cpp" to "main.cpp"
+        try {
+            // 1. 复制 CMakeLists.txt（根据选项选择模板）
+            val cmakeTemplate = if (useSourceCode) "CMakeLists_src.txt" else "CMakeLists_lib.txt"
+            val cmakeStream = javaClass.getResourceAsStream("/assets/cmake_template/$cmakeTemplate")
+            if (cmakeStream != null) {
+                val content = cmakeStream.bufferedReader().use { it.readText() }
+                val file = File(targetDir, "CMakeLists.txt")
+                file.writeText(content)
+                logger.info("Copied $cmakeTemplate to ${file.absolutePath}")
+            } else {
+                logger.error("CMake template not found: /assets/cmake_template/$cmakeTemplate")
+                throw RuntimeException("CMake 模板文件不存在")
+            }
+            
+            // 2. 复制 cmake_template 目录下的其他所有文件（除了 CMakeLists_*.txt）
+            val resourceUrl = javaClass.getResource("/assets/cmake_template")
+            if (resourceUrl != null) {
+                val uri = resourceUrl.toURI()
+                if (uri.scheme == "jar") {
+                    // 从 JAR 中复制
+                    copyOtherTemplateFilesFromJar(targetDir)
+                } else {
+                    // 从文件系统复制
+                    val templateDir = File(uri)
+                    templateDir.listFiles()?.forEach { file ->
+                        if (file.isFile && !file.name.startsWith("CMakeLists_") && !file.name.startsWith(".")) {
+                            val targetFile = File(targetDir, file.name)
+                            file.copyTo(targetFile, overwrite = true)
+                            logger.info("Copied ${file.name} to ${targetFile.absolutePath}")
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logger.error("Failed to copy CMake template files", e)
+            throw e
+        }
+    }
+    
+    /**
+     * 从 JAR 中复制 cmake_template 目录下的其他文件
+     */
+    private fun copyOtherTemplateFilesFromJar(targetDir: File) {
+        // 使用更可靠的方法：直接尝试复制已知的文件
+        // 这比尝试遍历 JAR 更可靠
+        val knownTemplateFiles = listOf(
+            "main.cpp"
+            // 在这里添加其他模板文件
         )
         
-        templateFiles.forEach { (sourceFile, targetFile) ->
+        knownTemplateFiles.forEach { fileName ->
             try {
-                val resourceStream = javaClass.getResourceAsStream("/assets/cmake_template/$sourceFile")
+                val resourceStream = javaClass.getResourceAsStream("/assets/cmake_template/$fileName")
                 if (resourceStream != null) {
-                    val content = resourceStream.bufferedReader().use { it.readText() }
-                    val file = File(targetDir, targetFile)
-                    file.parentFile?.mkdirs()
-                    file.writeText(content)
-                    logger.info("Copied $sourceFile to ${file.absolutePath}")
+                    val targetFile = File(targetDir, fileName)
+                    resourceStream.use { input ->
+                        targetFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    logger.info("Copied $fileName from JAR to ${targetFile.absolutePath}")
                 } else {
-                    logger.warn("Template file not found: /assets/cmake_template/$sourceFile")
+                    logger.warn("Template file not found: $fileName")
                 }
             } catch (e: Exception) {
-                logger.error("Failed to copy $sourceFile", e)
-                throw e
+                logger.error("Failed to copy $fileName", e)
             }
         }
     }
@@ -223,38 +273,80 @@ class CreateEgeProjectAction : AnAction() {
     
     /**
      * 从 JAR 文件中复制资源
+     * 使用类加载器直接访问资源，避免依赖 protectionDomain
      */
     private fun copyFromJar(resourcePath: String, targetDir: File) {
-        val jarFile = javaClass.protectionDomain.codeSource.location.toURI()
+        logger.info("Copying resources from JAR: $resourcePath")
+        // 直接使用类加载器方法，它更可靠
+        copyFromClassLoader(resourcePath, targetDir)
+    }
+    
+    /**
+     * 从类加载器复制资源
+     */
+    private fun copyFromClassLoader(resourcePath: String, targetDir: File) {
+        // 根据资源路径确定文件列表
+        val knownFiles = when {
+            resourcePath.contains("ege_bundle") -> listOf(
+                // include 目录
+                "include/ege.h",
+                "include/ege.zh_CN.h",
+                "include/ege/button.h",
+                "include/ege/camera_capture.h",
+                "include/ege/egecontrolbase.h",
+                "include/ege/fps.h",
+                "include/ege/label.h",
+                "include/ege/stdint.h",
+                "include/ege/sys_edit.h",
+                "include/ege/types.h",
+                "include/graphics.h",
+                // lib 目录
+                "lib/macOS/libgraphics.a",
+                "lib/mingw-w64-debian/libgraphics.a",
+                "lib/mingw64/MinGW-w64 GCC 8.1.0.txt",
+                "lib/mingw64/mingw-w64-gcc-8.1.0-x86_64/libgraphics.a",
+                "lib/vs2010/amd64/graphics.lib",
+                "lib/vs2010/graphics.lib",
+                "lib/vs2015/VS2015 Update3.txt",
+                "lib/vs2015/amd64/graphics.lib",
+                "lib/vs2015/graphics.lib",
+                "lib/vs2017/VS2017 Community 15.9.63.txt",
+                "lib/vs2017/x64/graphics.lib",
+                "lib/vs2017/x86/graphics.lib",
+                "lib/vs2019/x64/graphics.lib",
+                "lib/vs2019/x86/graphics.lib",
+                "lib/vs2022/x64/graphics.lib",
+                "lib/vs2022/x86/graphics.lib"
+            )
+            resourcePath.contains("ege_src") -> {
+                // TODO: 如果需要支持源码模式，在这里添加 ege_src 的文件列表
+                logger.warn("ege_src file list not yet implemented")
+                emptyList()
+            }
+            else -> emptyList()
+        }
         
-        try {
-            java.util.jar.JarFile(File(jarFile)).use { jar ->
-                val entries = jar.entries()
-                val normalizedPath = resourcePath.removePrefix("/")
-                
-                while (entries.hasMoreElements()) {
-                    val entry = entries.nextElement()
-                    val entryName = entry.name
-                    
-                    if (entryName.startsWith(normalizedPath) && !entry.isDirectory) {
-                        val relativePath = entryName.removePrefix(normalizedPath).removePrefix("/")
-                        if (relativePath.isNotEmpty()) {
-                            val targetFile = File(targetDir, relativePath)
-                            targetFile.parentFile?.mkdirs()
-                            
-                            jar.getInputStream(entry).use { input ->
-                                targetFile.outputStream().use { output ->
-                                    input.copyTo(output)
-                                }
-                            }
-                            logger.debug("Copied from JAR: $entryName -> ${targetFile.absolutePath}")
+        logger.info("Copying ${knownFiles.size} files from $resourcePath")
+        
+        knownFiles.forEach { relPath ->
+            try {
+                val fullPath = "$resourcePath/$relPath"
+                val stream = javaClass.getResourceAsStream(fullPath)
+                if (stream != null) {
+                    val targetFile = File(targetDir, relPath)
+                    targetFile.parentFile?.mkdirs()
+                    stream.use { input ->
+                        targetFile.outputStream().use { output ->
+                            input.copyTo(output)
                         }
                     }
+                    logger.debug("Copied: $fullPath -> ${targetFile.absolutePath}")
+                } else {
+                    logger.warn("Resource not found: $fullPath")
                 }
+            } catch (e: Exception) {
+                logger.error("Failed to copy $relPath: ${e.message}", e)
             }
-        } catch (e: Exception) {
-            logger.error("Failed to copy from JAR", e)
-            throw e
         }
     }
     

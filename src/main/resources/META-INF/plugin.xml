@@ -22,15 +22,6 @@
     </extensions>
 
     <actions>
-        <!-- EGE 项目创建 Action -->
-        <action id="org.xege.CreateEgeProject"
-                class="org.xege.project.CreateEgeProjectAction"
-                text="New EGE Project..."
-                description="Create a new EGE C++ project">
-            <add-to-group group-id="WelcomeScreen.QuickStart" anchor="after" relative-to-action="WelcomeScreen.CreateNewProject"/>
-            <add-to-group group-id="FileMenu" anchor="after" relative-to-action="NewProject"/>
-        </action>
-        
         <!-- 测试 Action -->
         <action id="org.xege.MyPluginAction"
                 class="org.xege.MyPluginAction"

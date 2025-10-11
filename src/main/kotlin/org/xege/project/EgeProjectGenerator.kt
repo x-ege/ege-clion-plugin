@@ -7,17 +7,83 @@ import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.ValidationInfo
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.DirectoryProjectGenerator
 import com.intellij.platform.ProjectGeneratorPeer
+import java.awt.BorderLayout
 import java.io.File
 import javax.swing.*
+
+/**
+ * EGE 项目设置
+ * 保存项目创建选项
+ */
+data class EgeProjectSettings(
+    val useSourceCode: Boolean = false
+)
+
+/**
+ * EGE 项目生成器的界面组件
+ * 在新建项目向导中显示项目选项
+ */
+class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
+    private val useSourceCodeCheckbox = JCheckBox("直接使用 EGE 源码作为项目依赖", false)
+    private val panel: JPanel
+    
+    init {
+        panel = JPanel(BorderLayout())
+        
+        // 创建选项面板
+        val optionsPanel = JPanel()
+        optionsPanel.layout = BoxLayout(optionsPanel, BoxLayout.Y_AXIS)
+        optionsPanel.border = BorderFactory.createEmptyBorder(10, 10, 10, 10)
+        
+        // 添加说明标签
+        val descriptionLabel = JLabel("<html><body style='width: 400px'>" +
+                "选择项目依赖方式：<br>" +
+                "• 不勾选：使用预编译的 EGE 静态库（推荐）<br>" +
+                "• 勾选：直接使用 EGE 源代码（可以查看和修改 EGE 内部实现）" +
+                "</body></html>")
+        optionsPanel.add(descriptionLabel)
+        optionsPanel.add(Box.createVerticalStrut(10))
+        
+        // 添加复选框
+        optionsPanel.add(useSourceCodeCheckbox)
+        
+        panel.add(optionsPanel, BorderLayout.NORTH)
+    }
+    
+    override fun getSettings(): EgeProjectSettings {
+        return EgeProjectSettings(useSourceCode = useSourceCodeCheckbox.isSelected)
+    }
+    
+    override fun getComponent(): JComponent {
+        return panel
+    }
+    
+    override fun buildUI(settingsStep: com.intellij.ide.util.projectWizard.SettingsStep) {
+        settingsStep.addSettingsComponent(panel)
+    }
+    
+    override fun validate(): ValidationInfo? {
+        return null // 无验证错误
+    }
+    
+    override fun isBackgroundJobRunning(): Boolean {
+        return false
+    }
+    
+    override fun addSettingsStateListener(listener: com.intellij.platform.WebProjectGenerator.SettingsStateListener) {
+        // 不需要监听器
+    }
+}
 
 /**
  * EGE 项目生成器
  * 用于在 IDE 的新建项目向导中创建 EGE C++ 项目
  */
-class EgeProjectGenerator : DirectoryProjectGenerator<Any> {
+class EgeProjectGenerator : DirectoryProjectGenerator<EgeProjectSettings> {
     private val logger = Logger.getInstance(EgeProjectGenerator::class.java)
     
     override fun getName(): String = "EGE"
@@ -38,35 +104,8 @@ class EgeProjectGenerator : DirectoryProjectGenerator<Any> {
         }
     }
     
-    override fun createPeer(): ProjectGeneratorPeer<Any> {
-        return object : ProjectGeneratorPeer<Any> {
-            override fun getSettings(): Any = Any()
-            
-            override fun getComponent(): JComponent {
-                // 创建一个简单的面板显示说明信息
-                return JPanel().apply {
-                    layout = BoxLayout(this, BoxLayout.Y_AXIS)
-                    border = BorderFactory.createEmptyBorder(10, 10, 10, 10)
-                    
-                    add(JLabel("EGE C++ 图形库项目"))
-                    add(Box.createVerticalStrut(10))
-                    add(JLabel("项目将包含："))
-                    add(JLabel("  • CMake 构建配置"))
-                    add(JLabel("  • EGE 图形库头文件和库文件"))
-                    add(JLabel("  • 示例代码 (main.cpp)"))
-                }
-            }
-            
-            override fun validate(): com.intellij.openapi.ui.ValidationInfo? = null
-            
-            override fun isBackgroundJobRunning(): Boolean = false
-            
-            override fun addSettingsListener(listener: ProjectGeneratorPeer.SettingsListener) {}
-            
-            override fun buildUI(settingsStep: com.intellij.ide.util.projectWizard.SettingsStep) {
-                // 不需要额外的设置步骤
-            }
-        }
+    override fun createPeer(): ProjectGeneratorPeer<EgeProjectSettings> {
+        return EgeProjectGeneratorPeer()
     }
     
     override fun validate(baseDirPath: String): ValidationResult {
@@ -87,10 +126,10 @@ class EgeProjectGenerator : DirectoryProjectGenerator<Any> {
     override fun generateProject(
         project: Project,
         baseDir: VirtualFile,
-        settings: Any,
+        settings: EgeProjectSettings,
         module: Module
     ) {
-        logger.info("Starting EGE project generation at: ${baseDir.path}")
+        logger.info("Starting EGE project generation at: ${baseDir.path}, useSourceCode: ${settings.useSourceCode}")
         
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, "创建 EGE 项目...", false) {
             override fun run(indicator: ProgressIndicator) {
@@ -100,7 +139,7 @@ class EgeProjectGenerator : DirectoryProjectGenerator<Any> {
                 
                 try {
                     // 复制 cmake_template 目录中的所有文件到项目目录
-                    copyTemplateFiles(baseDir, indicator)
+                    copyTemplateFiles(baseDir, settings, indicator)
                     
                     indicator.fraction = 1.0
                     indicator.text = "EGE 项目创建完成！"
@@ -117,19 +156,24 @@ class EgeProjectGenerator : DirectoryProjectGenerator<Any> {
     /**
      * 从插件资源中复制模板文件到目标目录
      */
-    private fun copyTemplateFiles(targetDir: VirtualFile, indicator: ProgressIndicator) {
+    private fun copyTemplateFiles(targetDir: VirtualFile, settings: EgeProjectSettings, indicator: ProgressIndicator) {
         val targetPath = File(targetDir.path)
         
         try {
             // 第一步：复制 cmake 模板文件 (30%)
             indicator.fraction = 0.1
             indicator.text = "正在复制 CMake 模板文件..."
-            copyCMakeTemplateFiles(targetPath)
+            copyCMakeTemplateFiles(targetPath, settings.useSourceCode)
             
-            // 第二步：复制 ege_bundle 目录 (70%)
+            // 第二步：根据选项复制对应的 EGE 资源
             indicator.fraction = 0.4
-            indicator.text = "正在复制 EGE 库文件..."
-            copyEgeBundle(targetPath, indicator)
+            if (settings.useSourceCode) {
+                indicator.text = "正在复制 EGE 源码..."
+                copyEgeSource(targetPath, indicator)
+            } else {
+                indicator.text = "正在复制 EGE 库文件..."
+                copyEgeBundle(targetPath, indicator)
+            }
             
             indicator.fraction = 1.0
             indicator.text = "文件复制完成"
@@ -145,28 +189,74 @@ class EgeProjectGenerator : DirectoryProjectGenerator<Any> {
     /**
      * 复制 CMake 模板文件
      */
-    private fun copyCMakeTemplateFiles(targetPath: File) {
-        val templateFiles = mapOf(
-            "CMakeLists_src.txt" to "CMakeLists.txt",
-            "CMakeLists_lib.txt" to "ege/CMakeLists.txt",
-            "main.cpp" to "main.cpp"
+    private fun copyCMakeTemplateFiles(targetPath: File, useSourceCode: Boolean) {
+        
+        try {
+            // 1. 复制 CMakeLists.txt（根据选项选择模板）
+            val cmakeTemplate = if (useSourceCode) "CMakeLists_src.txt" else "CMakeLists_lib.txt"
+            val cmakeStream = javaClass.getResourceAsStream("/assets/cmake_template/$cmakeTemplate")
+            if (cmakeStream != null) {
+                val content = cmakeStream.bufferedReader().use { it.readText() }
+                val file = File(targetPath, "CMakeLists.txt")
+                file.writeText(content)
+                logger.info("Copied $cmakeTemplate to ${file.absolutePath}")
+            } else {
+                logger.error("CMake template not found: /assets/cmake_template/$cmakeTemplate")
+                throw RuntimeException("CMake 模板文件不存在")
+            }
+            
+            // 2. 复制 cmake_template 目录下的其他所有文件（除了 CMakeLists_*.txt）
+            val resourceUrl = javaClass.getResource("/assets/cmake_template")
+            if (resourceUrl != null) {
+                val uri = resourceUrl.toURI()
+                if (uri.scheme == "jar") {
+                    // 从 JAR 中复制
+                    copyOtherTemplateFilesFromJar(targetPath)
+                } else {
+                    // 从文件系统复制
+                    val templateDir = File(uri)
+                    templateDir.listFiles()?.forEach { file ->
+                        if (file.isFile && !file.name.startsWith("CMakeLists_")) {
+                            val targetFile = File(targetPath, file.name)
+                            file.copyTo(targetFile, overwrite = true)
+                            logger.info("Copied ${file.name} to ${targetFile.absolutePath}")
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logger.error("Failed to copy CMake template files", e)
+            throw e
+        }
+    }
+    
+    /**
+     * 从 JAR 中复制 cmake_template 目录下的其他文件
+     */
+    private fun copyOtherTemplateFilesFromJar(targetPath: File) {
+        // 使用更可靠的方法：直接尝试复制已知的文件
+        // 这比尝试遍历 JAR 更可靠
+        val knownTemplateFiles = listOf(
+            "main.cpp"
+            // 在这里添加其他模板文件
         )
         
-        templateFiles.forEach { (sourceFile, targetFile) ->
+        knownTemplateFiles.forEach { fileName ->
             try {
-                val resourceStream = javaClass.getResourceAsStream("/assets/cmake_template/$sourceFile")
+                val resourceStream = javaClass.getResourceAsStream("/assets/cmake_template/$fileName")
                 if (resourceStream != null) {
-                    val content = resourceStream.bufferedReader().use { it.readText() }
-                    val file = File(targetPath, targetFile)
-                    file.parentFile?.mkdirs()
-                    file.writeText(content)
-                    logger.info("Copied $sourceFile to ${file.absolutePath}")
+                    val targetFile = File(targetPath, fileName)
+                    resourceStream.use { input ->
+                        targetFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    logger.info("Copied $fileName from JAR to ${targetFile.absolutePath}")
                 } else {
-                    logger.warn("Template file not found: /assets/cmake_template/$sourceFile")
+                    logger.warn("Template file not found: $fileName")
                 }
             } catch (e: Exception) {
-                logger.error("Failed to copy $sourceFile", e)
-                throw e
+                logger.error("Failed to copy $fileName", e)
             }
         }
     }
@@ -180,6 +270,17 @@ class EgeProjectGenerator : DirectoryProjectGenerator<Any> {
         
         // 递归复制资源
         copyResourceDirectory("/assets/ege_bundle", egeDir, indicator)
+    }
+    
+    /**
+     * 复制 ege_src 目录（EGE 源码）
+     */
+    private fun copyEgeSource(targetPath: File, indicator: ProgressIndicator) {
+        val egeDir = File(targetPath, "ege")
+        egeDir.mkdirs()
+        
+        // 递归复制 EGE 源码
+        copyResourceDirectory("/assets/ege_src", egeDir, indicator)
     }
     
     /**
@@ -212,56 +313,116 @@ class EgeProjectGenerator : DirectoryProjectGenerator<Any> {
     
     /**
      * 从 JAR 文件中复制资源
+     * 使用类加载器直接访问资源，避免依赖 protectionDomain
      */
     private fun copyFromJar(resourcePath: String, targetDir: File, indicator: ProgressIndicator) {
-        val classLoader = javaClass.classLoader
-        val jarFile = javaClass.protectionDomain.codeSource.location.toURI()
-        
-        try {
-            java.util.jar.JarFile(File(jarFile)).use { jar ->
-                val entries = jar.entries()
-                val normalizedPath = resourcePath.removePrefix("/")
-                
-                while (entries.hasMoreElements()) {
-                    val entry = entries.nextElement()
-                    val entryName = entry.name
-                    
-                    // 只处理目标资源路径下的文件
-                    if (entryName.startsWith(normalizedPath) && !entry.isDirectory) {
-                        val relativePath = entryName.removePrefix(normalizedPath).removePrefix("/")
-                        if (relativePath.isNotEmpty()) {
-                            val targetFile = File(targetDir, relativePath)
-                            targetFile.parentFile?.mkdirs()
-                            
-                            jar.getInputStream(entry).use { input ->
-                                targetFile.outputStream().use { output ->
-                                    input.copyTo(output)
-                                }
-                            }
-                            logger.debug("Copied from JAR: $entryName -> ${targetFile.absolutePath}")
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            logger.error("Failed to copy from JAR", e)
-            // 如果从 JAR 复制失败，尝试直接从类加载器复制
-            copyFromClassLoader(resourcePath, targetDir)
-        }
+        logger.info("Copying resources from JAR: $resourcePath")
+        // 直接使用 fallback 方法，它更可靠
+        copyFromClassLoader(resourcePath, targetDir)
     }
     
     /**
      * 从类加载器复制资源（fallback 方法）
      */
     private fun copyFromClassLoader(resourcePath: String, targetDir: File) {
-        // 已知的文件列表
-        val knownFiles = listOf(
-            "include/ege.h",
-            "include/ege.zh_CN.h",
-            "include/graphics.h",
-            "lib/mingw64/libgraphics.a",
-            "lib/mingw64/libgraphics64.a"
-        )
+        // 根据资源路径确定文件列表
+        val knownFiles = when {
+            resourcePath.contains("ege_bundle") -> listOf(
+                // include 目录
+                "include/ege.h",
+                "include/ege.zh_CN.h",
+                "include/ege/button.h",
+                "include/ege/camera_capture.h",
+                "include/ege/egecontrolbase.h",
+                "include/ege/fps.h",
+                "include/ege/label.h",
+                "include/ege/stdint.h",
+                "include/ege/sys_edit.h",
+                "include/ege/types.h",
+                "include/graphics.h",
+                // lib 目录
+                "lib/macOS/libgraphics.a",
+                "lib/mingw-w64-debian/libgraphics.a",
+                "lib/mingw64/MinGW-w64 GCC 8.1.0.txt",
+                "lib/mingw64/mingw-w64-gcc-8.1.0-x86_64/libgraphics.a",
+                "lib/vs2010/amd64/graphics.lib",
+                "lib/vs2010/graphics.lib",
+                "lib/vs2015/VS2015 Update3.txt",
+                "lib/vs2015/amd64/graphics.lib",
+                "lib/vs2015/graphics.lib",
+                "lib/vs2017/VS2017 Community 15.9.63.txt",
+                "lib/vs2017/x64/graphics.lib",
+                "lib/vs2017/x86/graphics.lib",
+                "lib/vs2019/x64/graphics.lib",
+                "lib/vs2019/x86/graphics.lib",
+                "lib/vs2022/x64/graphics.lib",
+                "lib/vs2022/x86/graphics.lib"
+            )
+            resourcePath.contains("ege_src") -> listOf(
+                // CMakeLists.txt
+                "CMakeLists.txt",
+                // include 目录
+                "include/ege.h",
+                "include/ege.zh_CN.h",
+                "include/graphics.h",
+                "include/ege/button.h",
+                "include/ege/camera_capture.h",
+                "include/ege/egecontrolbase.h",
+                "include/ege/fps.h",
+                "include/ege/label.h",
+                "include/ege/stdint.h",
+                "include/ege/sys_edit.h",
+                "include/ege/types.h",
+                // src 目录 - 添加所有源文件
+                "src/array.h",
+                "src/camera_capture.cpp",
+                "src/color.cpp",
+                "src/color.h",
+                "src/compress.cpp",
+                "src/console.cpp",
+                "src/console.h",
+                "src/crt_compat.cpp",
+                "src/debug.cpp",
+                "src/debug.h",
+                "src/ege_base.h",
+                "src/ege_common.h",
+                "src/ege_def.h",
+                "src/ege_dllimport.cpp",
+                "src/ege_dllimport.h",
+                "src/ege_extension.h",
+                "src/ege_graph.h",
+                "src/ege_head.h",
+                "src/ege_math.h",
+                "src/ege_time.h",
+                "src/egecontrolbase.cpp",
+                "src/egegapi.cpp",
+                "src/encodeconv.cpp",
+                "src/encodeconv.h",
+                "src/font.cpp",
+                "src/font.h",
+                "src/gdi_conv.cpp",
+                "src/gdi_conv.h",
+                "src/graphics.cpp",
+                "src/image.cpp",
+                "src/image.h",
+                "src/keyboard.cpp",
+                "src/keyboard.h",
+                "src/logo.cpp",
+                "src/math.cpp",
+                "src/message.cpp",
+                "src/message.h",
+                "src/mouse.cpp",
+                "src/mouse.h",
+                "src/music.cpp",
+                "src/music.h",
+                "src/random.cpp",
+                "src/sbt.h"
+                // 注意：如果有更多文件，需要继续添加
+            )
+            else -> emptyList()
+        }
+        
+        logger.info("Copying ${knownFiles.size} files from $resourcePath")
         
         knownFiles.forEach { relPath ->
             try {
@@ -276,9 +437,11 @@ class EgeProjectGenerator : DirectoryProjectGenerator<Any> {
                         }
                     }
                     logger.debug("Copied: $fullPath -> ${targetFile.absolutePath}")
+                } else {
+                    logger.warn("Resource not found: $fullPath")
                 }
             } catch (e: Exception) {
-                logger.warn("Failed to copy $relPath: ${e.message}")
+                logger.error("Failed to copy $relPath: ${e.message}", e)
             }
         }
     }
