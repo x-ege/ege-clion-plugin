@@ -10,7 +10,10 @@
     
     <depends>com.intellij.modules.platform</depends>
     <!-- CLion C/C++ 支持 -->
-    <depends optional="true" config-file="clion-only.xml">com.intellij.modules.clion</depends>
+    <depends>com.intellij.clion</depends>
+
+    <!-- <depends>com.intellij.clion</depends> -->
+    <!-- <directoryProjectGenerator implementation="cn.butterfly.template2.module.CTemplateGenerator"/> -->
 
     <extensions defaultExtensionNs="com.intellij">
         <!-- 注册通知组 -->

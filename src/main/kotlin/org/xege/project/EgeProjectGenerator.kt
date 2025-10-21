@@ -110,6 +110,8 @@ class EgeProjectGenerator : DirectoryProjectGenerator<EgeProjectSettings> {
     }
 
     override fun createPeer(): ProjectGeneratorPeer<EgeProjectSettings> {
+        logger.info("Creating EgeProjectGeneratorPeer...")
+        println("Creating EgeProjectGeneratorPeer...")
         return EgeProjectGeneratorPeer()
     }
 
