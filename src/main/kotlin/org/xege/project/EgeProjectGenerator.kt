@@ -13,6 +13,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.DirectoryProjectGenerator
 import com.intellij.platform.ProjectGeneratorPeer
 import java.awt.BorderLayout
+import java.awt.Component
 import java.io.File
 import javax.swing.*
 
@@ -21,7 +22,8 @@ import javax.swing.*
  * 保存项目创建选项
  */
 data class EgeProjectSettings(
-    val useSourceCode: Boolean = false
+    val useSourceCode: Boolean = false,
+    val cppStandard: String = "C++17"
 )
 
 /**
@@ -30,9 +32,12 @@ data class EgeProjectSettings(
  */
 class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
     private val useSourceCodeCheckbox = JCheckBox("直接使用 EGE 源码作为项目依赖", false)
+    private val cppStandardComboBox = JComboBox(arrayOf("C++11", "C++14", "C++17", "C++20", "C++23"))
     private val panel: JPanel = JPanel(BorderLayout())
 
     init {
+        // 设置默认选择为 C++17
+        cppStandardComboBox.selectedItem = "C++17"
 
         // 创建选项面板
         val optionsPanel = JPanel()
@@ -52,12 +57,29 @@ class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
 
         // 添加复选框
         optionsPanel.add(useSourceCodeCheckbox)
+        
+        optionsPanel.add(Box.createVerticalStrut(15))
+        
+        // 添加 C++ 标准选择
+        val standardPanel = JPanel()
+        standardPanel.layout = BoxLayout(standardPanel, BoxLayout.X_AXIS)
+        standardPanel.alignmentX = Component.LEFT_ALIGNMENT
+        standardPanel.add(JLabel("Language standard: "))
+        standardPanel.add(Box.createHorizontalStrut(5))
+        cppStandardComboBox.maximumSize = cppStandardComboBox.preferredSize
+        standardPanel.add(cppStandardComboBox)
+        standardPanel.add(Box.createHorizontalGlue())
+        
+        optionsPanel.add(standardPanel)
 
         panel.add(optionsPanel, BorderLayout.NORTH)
     }
 
     override fun getSettings(): EgeProjectSettings {
-        return EgeProjectSettings(useSourceCode = useSourceCodeCheckbox.isSelected)
+        return EgeProjectSettings(
+            useSourceCode = useSourceCodeCheckbox.isSelected,
+            cppStandard = cppStandardComboBox.selectedItem as String
+        )
     }
 
     override fun getComponent(): JComponent {
@@ -87,14 +109,16 @@ class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
  * EGE 项目生成器
  * 用于在 IDE 的新建项目向导中创建 EGE C++ 项目
  */
-class EgeProjectGenerator : DirectoryProjectGenerator<EgeProjectSettings> {
+class EgeProjectGenerator : DirectoryProjectGenerator<EgeProjectSettings>() {
     private val logger = Logger.getInstance(EgeProjectGenerator::class.java)
 
     override fun getName(): String = "Easy Graphics Engine"
 
+    override fun getDescription(): String = "创建一个基于 EGE (Easy Graphics Engine) 的 C++ 图形项目"
+
     override fun getLogo(): Icon? {
         return try {
-            // 加载插件图标并缩放到 16x16（DirectoryProjectGenerator 要求的尺寸）
+            // 加载插件图标并缩放到 16x16
             val originalIcon = IconLoader.findIcon("/META-INF/pluginIcon.svg", javaClass)
             if (originalIcon != null) {
                 // 使用 IconUtil 缩放图标到 16x16
@@ -113,6 +137,10 @@ class EgeProjectGenerator : DirectoryProjectGenerator<EgeProjectSettings> {
         logger.info("Creating EgeProjectGeneratorPeer...")
         println("Creating EgeProjectGeneratorPeer...")
         return EgeProjectGeneratorPeer()
+    }
+
+    override fun getSettingsPanel(): JPanel? {
+        return createPeer().component as? JPanel
     }
 
     override fun validate(baseDirPath: String): ValidationResult {
