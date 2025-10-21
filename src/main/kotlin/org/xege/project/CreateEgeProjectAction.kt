@@ -132,12 +132,12 @@ class CreateEgeProjectAction : AnAction() {
                     // 复制 CMake 模板文件
                     indicator.fraction = 0.2
                     indicator.text = "Copying CMake templates..."
-                    copyCMakeTemplateFiles(targetDir, useSourceCode)
+                    ResourceCopyHelper.copyCMakeTemplateFiles(targetDir, useSourceCode)
                     
                     // 复制 EGE 库文件
                     indicator.fraction = 0.5
                     indicator.text = "Copying EGE library..."
-                    copyEgeBundle(targetDir, indicator, useSourceCode)
+                    ResourceCopyHelper.copyEgeLibrary(targetDir, useSourceCode, indicator)
                     
                     indicator.fraction = 0.9
                     indicator.text = "Finalizing..."
@@ -172,98 +172,5 @@ class CreateEgeProjectAction : AnAction() {
                 }
             }
         })
-    }
-    
-    /**
-     * 复制 CMake 模板文件
-     * @param targetDir 目标目录
-     * @param useSourceCode 是否使用源码版本
-     */
-    private fun copyCMakeTemplateFiles(targetDir: File, useSourceCode: Boolean) {
-        try {
-            // 1. 复制 CMakeLists.txt（根据选项选择模板）
-            val cmakeTemplate = if (useSourceCode) "CMakeLists_src.txt" else "CMakeLists_lib.txt"
-            val cmakeStream = javaClass.getResourceAsStream("/assets/cmake_template/$cmakeTemplate")
-            if (cmakeStream != null) {
-                val content = cmakeStream.bufferedReader().use { it.readText() }
-                val file = File(targetDir, "CMakeLists.txt")
-                file.writeText(content)
-                logger.info("Copied $cmakeTemplate to ${file.absolutePath}")
-            } else {
-                logger.error("CMake template not found: /assets/cmake_template/$cmakeTemplate")
-                throw RuntimeException("CMake 模板文件不存在")
-            }
-            
-            // 2. 复制 cmake_template 目录下的其他所有文件（除了 CMakeLists_*.txt）
-            val resourceUrl = javaClass.getResource("/assets/cmake_template")
-            if (resourceUrl != null) {
-                val uri = resourceUrl.toURI()
-                if (uri.scheme == "jar") {
-                    // 从 JAR 中复制
-                    copyOtherTemplateFilesFromJar(targetDir)
-                } else {
-                    // 从文件系统复制
-                    val templateDir = File(uri)
-                    templateDir.listFiles()?.forEach { file ->
-                        if (file.isFile && !file.name.startsWith("CMakeLists_") && !file.name.startsWith(".")) {
-                            val targetFile = File(targetDir, file.name)
-                            file.copyTo(targetFile, overwrite = true)
-                            logger.info("Copied ${file.name} to ${targetFile.absolutePath}")
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            logger.error("Failed to copy CMake template files", e)
-            throw e
-        }
-    }
-    
-    /**
-     * 从 JAR 中复制 cmake_template 目录下的其他文件
-     */
-    private fun copyOtherTemplateFilesFromJar(targetDir: File) {
-        // 使用更可靠的方法：直接尝试复制已知的文件
-        // 这比尝试遍历 JAR 更可靠
-        val knownTemplateFiles = listOf(
-            "main.cpp"
-            // 在这里添加其他模板文件
-        )
-        
-        knownTemplateFiles.forEach { fileName ->
-            try {
-                val resourceStream = javaClass.getResourceAsStream("/assets/cmake_template/$fileName")
-                if (resourceStream != null) {
-                    val targetFile = File(targetDir, fileName)
-                    resourceStream.use { input ->
-                        targetFile.outputStream().use { output ->
-                            input.copyTo(output)
-                        }
-                    }
-                    logger.info("Copied $fileName from JAR to ${targetFile.absolutePath}")
-                } else {
-                    logger.warn("Template file not found: $fileName")
-                }
-            } catch (e: Exception) {
-                logger.error("Failed to copy $fileName", e)
-            }
-        }
-    }
-    
-    /**
-     * 复制 EGE 库文件
-     * @param targetDir 目标目录
-     * @param indicator 进度指示器
-     * @param useSourceCode 是否使用源码版本(如果是源码版本，需要复制 ege_src，否则复制 ege_bundle)
-     */
-    private fun copyEgeBundle(targetDir: File, indicator: ProgressIndicator, useSourceCode: Boolean) {
-        val egeDir = File(targetDir, "ege")
-        egeDir.mkdirs()
-        
-        // 根据选项决定复制哪个目录
-        val bundlePath = if (useSourceCode) "/assets/ege_src" else "/assets/ege_bundle"
-        
-        // 使用辅助类复制资源
-        ResourceCopyHelper.copyResourceDirectory(bundlePath, egeDir, indicator)
     }
 }
