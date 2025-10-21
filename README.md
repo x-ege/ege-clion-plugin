@@ -22,6 +22,11 @@
 - 支持多种编译器（MinGW、MSVC）
 - 支持多个 Visual Studio 版本
 
+### ✅ 多语言支持 (国际化)
+- 🌍 支持中文和英文界面
+- 根据系统语言自动切换
+- 所有菜单、对话框、消息都已国际化
+
 ### ✅ 开箱即用
 - 自动生成项目结构
 - 预配置的 CMakeLists.txt
@@ -146,10 +151,13 @@ my-ege-project/
 
 ## 📚 文档
 
+### 核心功能
 - [架构整合说明](docs/ARCHITECTURE_CONSOLIDATION.md) - 统一项目创建入口的设计决策
 - [架构整合测试清单](docs/ARCHITECTURE_CONSOLIDATION_TEST_CHECKLIST.md)
 - [项目向导使用指南](docs/PROJECT_WIZARD_GUIDE.md)
 - [实现总结](docs/IMPLEMENTATION_SUMMARY.md)
+
+### UI 和修复
 - [UI 改进文档](docs/UI_IMPROVEMENTS.md)
 - [图标错误修复](docs/ICON_ERROR_FIX.md)
 - [模板复制逻辑](docs/TEMPLATE_COPY_LOGIC.md)

@@ -14,6 +14,12 @@ import java.time.format.DateTimeFormatter
 
 class HelpAction : AnAction() {
     private val logger = Logger.getInstance(HelpAction::class.java)
+    
+    init {
+        // 设置国际化的菜单文本
+        templatePresentation.text = XegeBundle.message("menu.about")
+        templatePresentation.description = XegeBundle.message("menu.about.description")
+    }
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project
@@ -24,17 +30,8 @@ class HelpAction : AnAction() {
         // 显示插件信息对话框
         Messages.showInfoMessage(
             project,
-            """
-            • 版本: $pluginVersion
-            • 作者: wysaid
-            • 邮箱: this@xege.org
-            • 源码地址: https://github.com/x-ege/ege-jetbrains-plugin
-            
-            功能说明:
-            • 提供 EGE (Easy Graphics Engine) 项目模板
-            • 简化 C++ 图形编程项目配置
-            """.trimIndent(),
-            "关于 Xege Plugin"
+            XegeBundle.message("help.dialog.message", pluginVersion),
+            XegeBundle.message("help.dialog.title")
         )
         
         // 在 IDE 日志中输出

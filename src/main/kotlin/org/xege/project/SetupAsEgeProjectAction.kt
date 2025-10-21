@@ -11,6 +11,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.vfs.VfsUtil
+import org.xege.XegeBundle
 import java.awt.BorderLayout
 import java.io.File
 import javax.swing.BorderFactory
@@ -28,13 +29,19 @@ import javax.swing.JPanel
 class SetupAsEgeProjectAction : AnAction() {
     private val logger = Logger.getInstance(SetupAsEgeProjectAction::class.java)
     
+    init {
+        // 设置国际化的菜单文本
+        templatePresentation.text = XegeBundle.message("menu.setup.project")
+        templatePresentation.description = XegeBundle.message("menu.setup.project.description")
+    }
+    
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project
         if (project == null) {
             logger.warn("No project is currently open")
             Messages.showErrorDialog(
-                "请先打开一个项目",
-                "无法初始化 EGE 项目"
+                XegeBundle.message("setup.error.no.project.message"),
+                XegeBundle.message("setup.error.no.project.title")
             )
             return
         }
@@ -46,8 +53,8 @@ class SetupAsEgeProjectAction : AnAction() {
         if (basePath == null) {
             logger.warn("Project base path is null")
             Messages.showErrorDialog(
-                "无法获取项目路径",
-                "错误"
+                XegeBundle.message("setup.error.no.path.message"),
+                XegeBundle.message("setup.error.no.path.title")
             )
             return
         }
@@ -56,8 +63,8 @@ class SetupAsEgeProjectAction : AnAction() {
         if (!projectDir.exists() || !projectDir.isDirectory) {
             logger.warn("Project directory does not exist or is not a directory: $basePath")
             Messages.showErrorDialog(
-                "项目目录不存在或不是有效的目录",
-                "错误"
+                XegeBundle.message("setup.error.invalid.dir.message"),
+                XegeBundle.message("setup.error.no.path.title")
             )
             return
         }
@@ -70,9 +77,8 @@ class SetupAsEgeProjectAction : AnAction() {
         if (egeDir.exists() || cmakeFile.exists()) {
             val confirmResult = Messages.showYesNoDialog(
                 project,
-                "检测到目录中已存在 EGE 相关文件（ege 目录或 CMakeLists.txt）。\n" +
-                        "继续操作将覆盖这些文件。是否继续？",
-                "确认覆盖",
+                XegeBundle.message("setup.confirm.overwrite.message"),
+                XegeBundle.message("setup.confirm.overwrite.title"),
                 Messages.getWarningIcon()
             )
             if (confirmResult != Messages.YES) {
@@ -104,13 +110,13 @@ class SetupAsEgeProjectAction : AnAction() {
      * 项目设置选项对话框
      */
     private class ProjectSetupOptionsDialog(project: Project?) : DialogWrapper(project) {
-        private val useSourceCheckBox = JCheckBox("直接使用 EGE 源码作为项目依赖", false)
+        private val useSourceCheckBox = JCheckBox(XegeBundle.message("options.checkbox.use.source"), false)
         
         val useSourceCode: Boolean
             get() = useSourceCheckBox.isSelected
         
         init {
-            title = "初始化为 EGE 项目 - 选项配置"
+            title = XegeBundle.message("setup.options.dialog.title")
             init()
         }
         
@@ -123,15 +129,7 @@ class SetupAsEgeProjectAction : AnAction() {
             optionsPanel.border = BorderFactory.createEmptyBorder(10, 10, 10, 10)
             
             // 添加说明标签
-            val descriptionLabel = JLabel(
-                "<html><body style='width: 400px'>" +
-                        "<b>选择项目依赖方式：</b><br><br>" +
-                        "• <b>不勾选（推荐）</b>：使用预编译的 EGE 静态库<br>" +
-                        "  优点：编译速度快，项目结构简单<br><br>" +
-                        "• <b>勾选</b>：直接使用 EGE 源代码<br>" +
-                        "  优点：可以查看和修改 EGE 内部实现，适合高级用户" +
-                        "</body></html>"
-            )
+            val descriptionLabel = JLabel(XegeBundle.message("options.label.title"))
             optionsPanel.add(descriptionLabel)
             optionsPanel.add(Box.createVerticalStrut(15))
             
@@ -149,52 +147,52 @@ class SetupAsEgeProjectAction : AnAction() {
     private fun initializeEgeProject(project: Project, projectDir: File, useSourceCode: Boolean) {
         ProgressManager.getInstance().run(object : Task.Backgroundable(
             project, 
-            "正在初始化 EGE 项目...", 
+            XegeBundle.message("setup.task.title"), 
             false
         ) {
             override fun run(indicator: ProgressIndicator) {
                 indicator.isIndeterminate = false
                 indicator.fraction = 0.0
-                indicator.text = "正在初始化 EGE 项目结构..."
+                indicator.text = XegeBundle.message("setup.task.initializing")
                 
                 try {
                     // 复制 CMake 模板文件
                     indicator.fraction = 0.2
-                    indicator.text = "正在复制 CMake 模板文件..."
+                    indicator.text = XegeBundle.message("setup.task.cmake")
                     ResourceCopyHelper.copyCMakeTemplateFiles(projectDir, useSourceCode)
                     
                     // 复制 EGE 库文件
                     indicator.fraction = 0.5
                     indicator.text = if (useSourceCode) {
-                        "正在复制 EGE 源码..."
+                        XegeBundle.message("setup.task.source")
                     } else {
-                        "正在复制 EGE 库文件..."
+                        XegeBundle.message("setup.task.library")
                     }
                     ResourceCopyHelper.copyEgeLibrary(projectDir, useSourceCode, indicator)
                     
                     indicator.fraction = 0.9
-                    indicator.text = "正在完成初始化..."
+                    indicator.text = XegeBundle.message("setup.task.finalizing")
                     
                     // 刷新文件系统
                     val virtualFile = VfsUtil.findFileByIoFile(projectDir, true)
                     virtualFile?.refresh(false, true)
                     
                     indicator.fraction = 1.0
-                    indicator.text = "项目初始化完成！"
+                    indicator.text = XegeBundle.message("setup.task.complete")
                     
                     logger.info("EGE project initialized successfully at: ${projectDir.absolutePath}")
                     
                     // 在 EDT 线程上显示成功消息
                     ApplicationManager.getApplication().invokeLater {
+                        val typeText = if (useSourceCode) {
+                            XegeBundle.message("setup.success.source")
+                        } else {
+                            XegeBundle.message("setup.success.library")
+                        }
                         Messages.showInfoMessage(
                             project,
-                            "EGE 项目初始化成功！\n\n" +
-                                    "已创建的文件：\n" +
-                                    "• CMakeLists.txt - CMake 构建配置\n" +
-                                    "• main.cpp - 示例源文件\n" +
-                                    "• ege/ - EGE ${if (useSourceCode) "源码" else "库文件"}目录\n\n" +
-                                    "CLion 将自动重新加载项目配置。",
-                            "初始化完成"
+                            XegeBundle.message("setup.success.message", typeText),
+                            XegeBundle.message("setup.success.title")
                         )
                     }
                     
@@ -205,8 +203,8 @@ class SetupAsEgeProjectAction : AnAction() {
                     ApplicationManager.getApplication().invokeLater {
                         Messages.showErrorDialog(
                             project,
-                            "初始化 EGE 项目失败：${e.message}",
-                            "错误"
+                            XegeBundle.message("setup.error.message", e.message ?: "Unknown error"),
+                            XegeBundle.message("setup.error.title")
                         )
                     }
                 }

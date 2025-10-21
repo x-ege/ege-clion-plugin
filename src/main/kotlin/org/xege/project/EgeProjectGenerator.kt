@@ -12,6 +12,7 @@ import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.vfs.VirtualFile
 import com.jetbrains.cidr.cpp.cmake.projectWizard.generators.CLionProjectGenerator
 import com.intellij.platform.ProjectGeneratorPeer
+import org.xege.XegeBundle
 import java.awt.BorderLayout
 import java.awt.Component
 import java.io.File
@@ -21,6 +22,11 @@ import javax.swing.*
  * 选择新建项目时的默认 Demo
  */
 private val DEMO_OPTIONS = arrayOf("Hello World")
+
+/**
+ * 获取本地化的Demo选项标签
+ */
+private fun getDemoLabel(): String = XegeBundle.message("options.demo.label")
 
 /**
  * EGE 项目设置
@@ -36,7 +42,7 @@ data class EgeProjectSettings(
  * 在新建项目向导中显示项目选项
  */
 class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
-    private val useSourceCodeCheckbox = JCheckBox("直接使用 EGE 源码作为项目依赖", false)
+    private val useSourceCodeCheckbox = JCheckBox(XegeBundle.message("options.checkbox.use.source"), false)
     private val demoOptionComboBox = JComboBox(DEMO_OPTIONS)
     private val panel: JPanel = JPanel(BorderLayout())
 
@@ -50,13 +56,7 @@ class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
         optionsPanel.border = BorderFactory.createEmptyBorder(10, 10, 10, 10)
 
         // 添加说明标签
-        val descriptionLabel = JLabel(
-            "<html><body style='width: 400px'>" +
-                    "选择项目依赖方式：<br>" +
-                    "• 不勾选：使用预编译的 EGE 静态库（推荐）<br>" +
-                    "• 勾选：直接使用 EGE 源代码（可以查看和修改 EGE 内部实现）" +
-                    "</body></html>"
-        )
+        val descriptionLabel = JLabel(XegeBundle.message("options.label.title"))
         optionsPanel.add(descriptionLabel)
         optionsPanel.add(Box.createVerticalStrut(10))
 
@@ -68,7 +68,7 @@ class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
         val demoOptionPanel = JPanel()
         demoOptionPanel.layout = BoxLayout(demoOptionPanel, BoxLayout.X_AXIS)
         demoOptionPanel.alignmentX = Component.LEFT_ALIGNMENT
-        demoOptionPanel.add(JLabel("Demo Template: "))
+        demoOptionPanel.add(JLabel(getDemoLabel()))
         demoOptionPanel.add(Box.createHorizontalStrut(5))
         demoOptionComboBox.maximumSize = demoOptionComboBox.preferredSize
         demoOptionPanel.add(demoOptionComboBox)
@@ -117,9 +117,9 @@ class EgeProjectGenerator : CLionProjectGenerator<EgeProjectSettings>() {
     private val logger = Logger.getInstance(EgeProjectGenerator::class.java)
     private var peer: EgeProjectGeneratorPeer? = null
 
-    override fun getName(): String = "Easy Graphics Engine"
+    override fun getName(): String = XegeBundle.message("generator.name")
 
-    override fun getDescription(): String = "创建一个基于 EGE (Easy Graphics Engine) 的 C++ 图形项目"
+    override fun getDescription(): String = XegeBundle.message("generator.description")
 
     override fun getLogo(): Icon? {
         return try {
@@ -159,7 +159,7 @@ class EgeProjectGenerator : CLionProjectGenerator<EgeProjectSettings>() {
             // 检查目录是否为空
             val files = dir.listFiles()
             if (files != null && files.isNotEmpty()) {
-                return ValidationResult("目录不为空，请选择一个空目录或不存在的目录")
+                return ValidationResult(XegeBundle.message("generator.validation.not.empty"))
             }
         }
 
@@ -174,23 +174,23 @@ class EgeProjectGenerator : CLionProjectGenerator<EgeProjectSettings>() {
     ) {
         logger.info("Starting EGE project generation at: ${baseDir.path}, useSourceCode: ${settings.useSourceCode}")
 
-        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "创建 EGE 项目...", false) {
+        ProgressManager.getInstance().run(object : Task.Backgroundable(project, XegeBundle.message("generator.task.title"), false) {
             override fun run(indicator: ProgressIndicator) {
                 indicator.isIndeterminate = false
                 indicator.fraction = 0.0
-                indicator.text = "正在复制 EGE 模板文件..."
+                indicator.text = XegeBundle.message("generator.task.copying.templates")
 
                 try {
                     // 复制 cmake_template 目录中的所有文件到项目目录
                     copyTemplateFiles(baseDir, settings, indicator)
 
                     indicator.fraction = 1.0
-                    indicator.text = "EGE 项目创建完成！"
+                    indicator.text = XegeBundle.message("generator.task.complete")
 
                     logger.info("EGE project generated successfully at: ${baseDir.path}")
                 } catch (e: Exception) {
                     logger.error("Failed to generate EGE project", e)
-                    throw RuntimeException("创建 EGE 项目失败: ${e.message}", e)
+                    throw RuntimeException(XegeBundle.message("generator.error.failed", e.message ?: "Unknown error"), e)
                 }
             }
         })
@@ -205,16 +205,20 @@ class EgeProjectGenerator : CLionProjectGenerator<EgeProjectSettings>() {
         try {
             // 第一步：复制 cmake 模板文件 (30%)
             indicator.fraction = 0.1
-            indicator.text = "正在复制 CMake 模板文件..."
+            indicator.text = XegeBundle.message("generator.task.copying.cmake")
             ResourceCopyHelper.copyCMakeTemplateFiles(targetPath, settings.useSourceCode)
 
             // 第二步：根据选项复制对应的 EGE 资源
             indicator.fraction = 0.4
-            indicator.text = if (settings.useSourceCode) "正在复制 EGE 源码..." else "正在复制 EGE 库文件..."
+            indicator.text = if (settings.useSourceCode) {
+                XegeBundle.message("generator.task.copying.source")
+            } else {
+                XegeBundle.message("generator.task.copying.library")
+            }
             ResourceCopyHelper.copyEgeLibrary(targetPath, settings.useSourceCode, indicator)
 
             indicator.fraction = 1.0
-            indicator.text = "文件复制完成"
+            indicator.text = XegeBundle.message("generator.task.file.copy.complete")
 
             // 刷新虚拟文件系统
             targetDir.refresh(false, true)

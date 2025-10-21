@@ -4,8 +4,11 @@
     <!-- 版本号由 Gradle 构建时自动注入，不需要在此硬编码 -->
     <vendor email="this@xege.org" url="https://github.com/x-ege/ege-jetbrains-plugin">wysaid</vendor>
     
+    <!-- 国际化资源包 -->
+    <resource-bundle>messages.XegeBundle</resource-bundle>
+    
     <description>
-        EGE (Easy Graphics Engine) 针对 CLion IDE 的专属插件，提供简单易用的图形编程支持。
+        EGE (Easy Graphics Engine) plugin for CLion IDE, providing simple graphics programming support.
     </description>
     
     <depends>com.intellij.modules.platform</depends>
@@ -23,30 +26,23 @@
     <actions>
         <!-- EGE 菜单组 - 在工具菜单中显示为带子菜单的选项 -->
         <group id="org.xege.EgeOptionsGroup" 
-               text="EGE Options" 
-               description="EGE 图形库相关选项"
+               class="org.xege.action.EgeOptionsGroup"
                popup="true">
             
             <!-- 创建 EGE 项目 Action -->
             <action id="org.xege.CreateEgeProjectAction"
-                    class="org.xege.project.CreateEgeProjectAction"
-                    text="创建 EGE 项目"
-                    description="创建一个新的 EGE C++ 图形项目"/>
+                    class="org.xege.project.CreateEgeProjectAction"/>
             
             <separator/>
 
             <action id="org.xege.SetupAsEgeProjectAction"
-                    class="org.xege.project.SetupAsEgeProjectAction"
-                    text="初始化为 EGE 项目"
-                    description="将工作区项目初始化为 EGE C++ 图形库项目"/>
+                    class="org.xege.project.SetupAsEgeProjectAction"/>
             
             <separator/>
             
             <!-- 帮助/关于 Action -->
             <action id="org.xege.HelpAction"
-                    class="org.xege.HelpAction"
-                    text="关于 EGE"
-                    description="查看 EGERUn 插件信息"/>
+                    class="org.xege.HelpAction"/>
             
             <separator/>
             
