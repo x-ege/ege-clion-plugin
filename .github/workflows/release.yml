@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'  # 匹配纯数字和小数点格式的 tag，如 1.0.1
+
+jobs:
+  validate-and-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Extract tag version
+        id: extract_version
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/}"
+          echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
+          echo "Tag version: $TAG_VERSION"
+
+      - name: Read plugin version from gradle.properties
+        id: plugin_version
+        run: |
+          PLUGIN_VERSION=$(grep "^pluginVersion=" gradle.properties | cut -d'=' -f2)
+          echo "plugin_version=$PLUGIN_VERSION" >> $GITHUB_OUTPUT
+          echo "Plugin version from gradle.properties: $PLUGIN_VERSION"
+
+      - name: Validate version match
+        run: |
+          TAG_VERSION="${{ steps.extract_version.outputs.tag_version }}"
+          PLUGIN_VERSION="${{ steps.plugin_version.outputs.plugin_version }}"
+          
+          if [ "$TAG_VERSION" != "$PLUGIN_VERSION" ]; then
+            echo "❌ 错误: Tag 版本号 ($TAG_VERSION) 与 gradle.properties 中的版本号 ($PLUGIN_VERSION) 不一致！"
+            echo "请确保 gradle.properties 中的 pluginVersion 与 tag 版本号一致后再次推送 tag。"
+            exit 1
+          fi
+          
+          echo "✅ 版本号验证通过: $TAG_VERSION"
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run tests
+        run: ./gradlew test
+
+      - name: Build plugin
+        run: ./gradlew buildPlugin
+
+      - name: Verify plugin
+        run: ./gradlew verifyPlugin
+
+      - name: Get plugin artifact name
+        id: artifact_name
+        run: |
+          ARTIFACT_PATH=$(ls build/distributions/*.zip | head -n 1)
+          ARTIFACT_NAME=$(basename "$ARTIFACT_PATH")
+          echo "artifact_path=$ARTIFACT_PATH" >> $GITHUB_OUTPUT
+          echo "artifact_name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+          echo "Plugin artifact: $ARTIFACT_NAME"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION="${{ steps.extract_version.outputs.tag_version }}"
+          
+          # 生成更新日志
+          cat > RELEASE_NOTES.md << EOF
+          ## EGE JetBrains Plugin v${VERSION}
+          
+          ### 功能特性
+          - EGE 图形库项目向导支持
+          - CLion 专属集成
+          - 多平台支持 (Windows, macOS, Linux)
+          - 支持 CLion 2023.3 - 2025.1 (最新版本)
+          
+          ### 安装方法
+          1. 下载下方的插件文件 (\`${{ steps.artifact_name.outputs.artifact_name }}\`)
+          2. 在 CLion 中打开 Settings/Preferences → Plugins
+          3. 点击齿轮图标 → Install Plugin from Disk
+          4. 选择下载的插件文件并安装
+          5. 重启 CLion
+          
+          ### 系统要求
+          - CLion 2023.3 或更高版本
+          - JDK 17 或更高版本
+          EOF
+          
+          echo "Changelog generated"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.extract_version.outputs.tag_version }}
+          body_path: RELEASE_NOTES.md
+          files: |
+            ${{ steps.artifact_name.outputs.artifact_path }}
+          draft: false
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release summary
+        run: |
+          echo "🎉 Release ${{ steps.extract_version.outputs.tag_version }} 创建成功！"
+          echo "📦 插件文件: ${{ steps.artifact_name.outputs.artifact_name }}"
+          echo "🔗 查看 Release: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.extract_version.outputs.tag_version }}"
