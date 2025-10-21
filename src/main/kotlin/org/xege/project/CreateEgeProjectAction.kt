@@ -303,52 +303,21 @@ class CreateEgeProjectAction : AnAction() {
     
     /**
      * 从类加载器复制资源
+     * 自动扫描资源目录并复制所有文件
      */
     private fun copyFromClassLoader(resourcePath: String, targetDir: File) {
-        // 根据资源路径确定文件列表
-        val knownFiles = when {
-            resourcePath.contains("ege_bundle") -> listOf(
-                // include 目录
-                "include/ege.h",
-                "include/ege.zh_CN.h",
-                "include/ege/button.h",
-                "include/ege/camera_capture.h",
-                "include/ege/egecontrolbase.h",
-                "include/ege/fps.h",
-                "include/ege/label.h",
-                "include/ege/stdint.h",
-                "include/ege/sys_edit.h",
-                "include/ege/types.h",
-                "include/graphics.h",
-                // lib 目录
-                "lib/macOS/libgraphics.a",
-                "lib/mingw-w64-debian/libgraphics.a",
-                "lib/mingw64/MinGW-w64 GCC 8.1.0.txt",
-                "lib/mingw64/mingw-w64-gcc-8.1.0-x86_64/libgraphics.a",
-                "lib/vs2010/amd64/graphics.lib",
-                "lib/vs2010/graphics.lib",
-                "lib/vs2015/VS2015 Update3.txt",
-                "lib/vs2015/amd64/graphics.lib",
-                "lib/vs2015/graphics.lib",
-                "lib/vs2017/VS2017 Community 15.9.63.txt",
-                "lib/vs2017/x64/graphics.lib",
-                "lib/vs2017/x86/graphics.lib",
-                "lib/vs2019/x64/graphics.lib",
-                "lib/vs2019/x86/graphics.lib",
-                "lib/vs2022/x64/graphics.lib",
-                "lib/vs2022/x86/graphics.lib"
-            )
-            resourcePath.contains("ege_src") -> {
-                // TODO: 如果需要支持源码模式，在这里添加 ege_src 的文件列表
-                logger.warn("ege_src file list not yet implemented")
-                emptyList()
-            }
-            else -> emptyList()
+        logger.info("Discovering and copying resources from: $resourcePath")
+        
+        // 使用 ClassLoader 扫描资源目录
+        val resourceFiles = discoverResourceFiles(resourcePath)
+        logger.info("Found ${resourceFiles.size} files in $resourcePath")
+        
+        if (resourceFiles.isEmpty()) {
+            logger.warn("No files found in resource path: $resourcePath")
+            return
         }
         
-        logger.info("Copying ${knownFiles.size} files from $resourcePath")
-        
-        knownFiles.forEach { relPath ->
+        resourceFiles.forEach { relPath ->
             try {
                 val fullPath = "$resourcePath/$relPath"
                 val stream = javaClass.getResourceAsStream(fullPath)
@@ -366,6 +335,72 @@ class CreateEgeProjectAction : AnAction() {
                 }
             } catch (e: Exception) {
                 logger.error("Failed to copy $relPath: ${e.message}", e)
+            }
+        }
+    }
+    
+    /**
+     * 扫描资源目录,发现所有文件
+     * @param resourcePath 资源路径
+     * @return 相对路径列表
+     */
+    private fun discoverResourceFiles(resourcePath: String): List<String> {
+        val files = mutableListOf<String>()
+        
+        try {
+            // 获取资源 URL
+            val resourceUrl = javaClass.getResource(resourcePath)
+            if (resourceUrl == null) {
+                logger.warn("Resource URL not found: $resourcePath")
+                return emptyList()
+            }
+            
+            val uri = resourceUrl.toURI()
+            
+            if (uri.scheme == "jar") {
+                // 从 JAR 文件扫描
+                val jarPath = uri.toString().substringAfter("jar:file:").substringBefore("!")
+                val jarFile = java.util.jar.JarFile(File(java.net.URI("file:$jarPath")))
+                
+                val prefix = resourcePath.removePrefix("/")
+                jarFile.entries().asIterator().forEach { entry ->
+                    val name = entry.name
+                    if (name.startsWith(prefix) && !entry.isDirectory) {
+                        val relativePath = name.removePrefix("$prefix/")
+                        if (relativePath.isNotEmpty() && !relativePath.startsWith(".")) {
+                            files.add(relativePath)
+                        }
+                    }
+                }
+                jarFile.close()
+            } else {
+                // 从文件系统扫描
+                val dir = File(uri)
+                if (dir.exists() && dir.isDirectory) {
+                    collectFiles(dir, "", files)
+                }
+            }
+        } catch (e: Exception) {
+            logger.error("Failed to discover resource files in $resourcePath", e)
+        }
+        
+        return files
+    }
+    
+    /**
+     * 递归收集文件
+     * @param dir 当前目录
+     * @param prefix 路径前缀
+     * @param files 文件列表(输出参数)
+     */
+    private fun collectFiles(dir: File, prefix: String, files: MutableList<String>) {
+        dir.listFiles()?.forEach { file ->
+            if (file.isDirectory) {
+                val newPrefix = if (prefix.isEmpty()) file.name else "$prefix/${file.name}"
+                collectFiles(file, newPrefix, files)
+            } else if (!file.name.startsWith(".")) {
+                val relativePath = if (prefix.isEmpty()) file.name else "$prefix/${file.name}"
+                files.add(relativePath)
             }
         }
     }

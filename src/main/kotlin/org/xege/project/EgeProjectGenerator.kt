@@ -115,6 +115,7 @@ class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
  */
 class EgeProjectGenerator : CLionProjectGenerator<EgeProjectSettings>() {
     private val logger = Logger.getInstance(EgeProjectGenerator::class.java)
+    private var peer: EgeProjectGeneratorPeer? = null
 
     override fun getName(): String = "Easy Graphics Engine"
 
@@ -138,9 +139,12 @@ class EgeProjectGenerator : CLionProjectGenerator<EgeProjectSettings>() {
     }
 
     override fun createPeer(): ProjectGeneratorPeer<EgeProjectSettings> {
-        logger.info("Creating EgeProjectGeneratorPeer...")
-        println("Creating EgeProjectGeneratorPeer...")
-        return EgeProjectGeneratorPeer()
+        if (peer == null) {
+            logger.info("Creating EgeProjectGeneratorPeer...")
+            println("Creating EgeProjectGeneratorPeer...")
+            peer = EgeProjectGeneratorPeer()
+        }
+        return peer!!
     }
 
     override fun getSettingsPanel(): JPanel? {
