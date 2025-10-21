@@ -2,7 +2,7 @@
     <id>org.xege.creator</id>
     <name>Xege Creator</name>
     <!-- 版本号由 Gradle 构建时自动注入，不需要在此硬编码 -->
-    <vendor email="this@xege.org" url="https://github.com/x-ege/ege-jetbrains-plugin">wysaid</vendor>
+    <vendor email="this@xege.org" url="https://github.com/x-ege/ege-clion-plugin">wysaid</vendor>
     
     <!-- 国际化资源包 -->
     <resource-bundle>messages.XegeBundle</resource-bundle>

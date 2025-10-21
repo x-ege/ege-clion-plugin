@@ -1,7 +1,7 @@
 # XEGE Creator
 
-[![CI](https://github.com/x-ege/ege-jetbrains-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/x-ege/ege-jetbrains-plugin/actions/workflows/ci.yml)
-[![Release](https://github.com/x-ege/ege-jetbrains-plugin/actions/workflows/release.yml/badge.svg)](https://github.com/x-ege/ege-jetbrains-plugin/actions/workflows/release.yml)
+[![CI](https://github.com/x-ege/ege-clion-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/x-ege/ege-clion-plugin/actions/workflows/ci.yml)
+[![Release](https://github.com/x-ege/ege-clion-plugin/actions/workflows/release.yml/badge.svg)](https://github.com/x-ege/ege-clion-plugin/actions/workflows/release.yml)
 [![JetBrains Plugin](https://img.shields.io/jetbrains/plugin/v/28785-xege-creator.svg)](https://plugins.jetbrains.com/plugin/28785-xege-creator)
 [![Downloads](https://img.shields.io/jetbrains/plugin/d/28785-xege-creator.svg)](https://plugins.jetbrains.com/plugin/28785-xege-creator)
 
@@ -23,7 +23,7 @@
 
 ### 方式二：手动安装
 
-1. 从 [Releases](https://github.com/x-ege/ege-jetbrains-plugin/releases) 页面下载最新的插件 ZIP 文件
+1. 从 [Releases](https://github.com/x-ege/ege-clion-plugin/releases) 页面下载最新的插件 ZIP 文件
 2. 打开 CLion，进入 `Settings/Preferences → Plugins`
 3. 点击齿轮图标 ⚙️ → `Install Plugin from Disk...`
 4. 选择下载的 ZIP 文件
@@ -119,7 +119,7 @@ my-ege-project/
 
 ```bash
 # 克隆项目
-git clone https://github.com/x-ege/ege-jetbrains-plugin.git
+git clone https://github.com/x-ege/ege-clion-plugin.git
 cd ege-jetbrains-plugin
 
 # 构建插件
@@ -159,7 +159,7 @@ cd ege-jetbrains-plugin
 ## 📚 相关链接
 
 - 🏪 **[JetBrains 插件商店](https://plugins.jetbrains.com/plugin/28785-xege-creator)**
-- 📦 **[GitHub Releases](https://github.com/x-ege/ege-jetbrains-plugin/releases)**
+- 📦 **[GitHub Releases](https://github.com/x-ege/ege-clion-plugin/releases)**
 - 🌐 **[EGE 官方网站](https://xege.org/)**
 - 💻 **[EGE 源码仓库](https://github.com/wysaid/xege)**
 
@@ -183,4 +183,4 @@ cd ege-jetbrains-plugin
 
 欢迎提交 Issue 和 Pull Request！
 
-如果这个插件对你有帮助，请在 [GitHub](https://github.com/x-ege/ege-jetbrains-plugin) 给个 ⭐️ Star！
+如果这个插件对你有帮助，请在 [GitHub](https://github.com/x-ege/ege-clion-plugin) 给个 ⭐️ Star！
