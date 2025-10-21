@@ -11,15 +11,18 @@
         EGE (Easy Graphics Engine) plugin for CLion IDE, providing simple graphics programming support.
     </description>
     
+    <!-- 兼容性范围：从 2023.3 (233) 到 2025.1 (251) - 支持最新版本 -->
+    <idea-version since-build="233" until-build="251.*"/>
+    
     <depends>com.intellij.modules.platform</depends>
     <!-- CLion C/C++ 支持 - 必需依赖 -->
     <depends>com.intellij.clion</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <!-- 注册通知组 -->
-        <notificationGroup id="Xege Plugin Notifications" displayType="BALLOON"/>
+        <!-- 注册通知组 - 使用新的格式 -->
+        <notificationGroup id="Xege Plugin Notifications" displayType="BALLOON" isLogByDefault="true"/>
         
-        <!-- 注册 CLion 项目生成器 - 使用 CLionProjectGenerator -->
+        <!-- 注册 CLion 项目生成器 - 使用正确的扩展点 -->
         <directoryProjectGenerator implementation="org.xege.project.EgeProjectGenerator"/>
     </extensions>
 

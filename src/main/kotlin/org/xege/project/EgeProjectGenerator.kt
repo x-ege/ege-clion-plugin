@@ -103,9 +103,9 @@ class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
         return false
     }
 
-    @Deprecated("Deprecated in Java")
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun addSettingsStateListener(listener: com.intellij.platform.WebProjectGenerator.SettingsStateListener) {
-        // 不需要监听器
+        // 不需要监听器 - 此方法已废弃但仍需要实现
     }
 }
 
