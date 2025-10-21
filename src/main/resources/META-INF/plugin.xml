@@ -34,6 +34,13 @@
                     description="创建一个新的 EGE C++ 图形项目"/>
             
             <separator/>
+
+            <action id="org.xege.SetupAsEgeProjectAction"
+                    class="org.xege.project.SetupAsEgeProjectAction"
+                    text="初始化为 EGE 项目"
+                    description="将工作区项目初始化为 EGE C++ 图形库项目"/>
+            
+            <separator/>
             
             <!-- 帮助/关于 Action -->
             <action id="org.xege.HelpAction"
