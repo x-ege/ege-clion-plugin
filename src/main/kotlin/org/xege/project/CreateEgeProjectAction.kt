@@ -84,13 +84,33 @@ class CreateEgeProjectAction : AnAction() {
             get() = useSourceCheckBox.isSelected
         
         init {
-            title = "EGE Project Options"
+            title = "创建 EGE 项目 - 选项配置"
             init()
         }
         
         override fun createCenterPanel(): JComponent {
             val panel = JPanel(BorderLayout())
-            panel.add(useSourceCheckBox, BorderLayout.CENTER)
+            
+            // 创建选项面板
+            val optionsPanel = JPanel()
+            optionsPanel.layout = javax.swing.BoxLayout(optionsPanel, javax.swing.BoxLayout.Y_AXIS)
+            optionsPanel.border = javax.swing.BorderFactory.createEmptyBorder(10, 10, 10, 10)
+            
+            // 添加说明标签
+            val descriptionLabel = javax.swing.JLabel("<html><body style='width: 400px'>" +
+                    "<b>选择项目依赖方式：</b><br><br>" +
+                    "• <b>不勾选（推荐）</b>：使用预编译的 EGE 静态库<br>" +
+                    "  优点：编译速度快，项目结构简单<br><br>" +
+                    "• <b>勾选</b>：直接使用 EGE 源代码<br>" +
+                    "  优点：可以查看和修改 EGE 内部实现，适合高级用户" +
+                    "</body></html>")
+            optionsPanel.add(descriptionLabel)
+            optionsPanel.add(javax.swing.Box.createVerticalStrut(15))
+            
+            // 添加复选框
+            optionsPanel.add(useSourceCheckBox)
+            
+            panel.add(optionsPanel, BorderLayout.CENTER)
             return panel
         }
     }

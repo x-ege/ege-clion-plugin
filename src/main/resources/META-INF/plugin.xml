@@ -21,14 +21,43 @@
     </extensions>
 
     <actions>
-        <!-- 测试 Action -->
-        <action id="org.xege.HelpAction"
-                class="org.xege.HelpAction"
-                text="x-ege 选项"
-                description="激活 Xege 插件功能，显示详细的运行信息">
-            <add-to-group group-id="MainMenu" anchor="last"/>
-            <!-- 也添加到工具菜单中，更容易找到 -->
+        <!-- EGE 菜单组 - 在工具菜单中显示为带子菜单的选项 -->
+        <group id="org.xege.EgeOptionsGroup" 
+               text="EGE Options" 
+               description="EGE 图形库相关选项"
+               popup="true">
+            
+            <!-- 创建 EGE 项目 Action -->
+            <action id="org.xege.CreateEgeProjectAction"
+                    class="org.xege.project.CreateEgeProjectAction"
+                    text="创建 EGE 项目"
+                    description="创建一个新的 EGE C++ 图形项目"/>
+            
+            <separator/>
+            
+            <!-- 帮助/关于 Action -->
+            <action id="org.xege.HelpAction"
+                    class="org.xege.HelpAction"
+                    text="关于 EGE"
+                    description="查看 EGERUn 插件信息"/>
+            
+            <separator/>
+            
+            <!-- 这里可以添加更多 Action -->
+            <!-- 例如：
+            <action id="org.xege.SettingsAction"
+                    class="org.xege.SettingsAction"
+                    text="插件设置"
+                    description="配置 EGE 插件选项"/>
+            
+            <action id="org.xege.DocumentationAction"
+                    class="org.xege.DocumentationAction"
+                    text="在线文档"
+                    description="打开 EGE 在线文档"/>
+            -->
+            
+            <!-- 添加到工具菜单 -->
             <add-to-group group-id="ToolsMenu" anchor="first"/>
-        </action>
+        </group>
     </actions>
 </idea-plugin>

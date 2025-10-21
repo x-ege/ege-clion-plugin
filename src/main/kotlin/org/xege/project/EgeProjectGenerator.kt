@@ -94,10 +94,17 @@ class EgeProjectGenerator : DirectoryProjectGenerator<EgeProjectSettings> {
 
     override fun getLogo(): Icon? {
         return try {
-            // 使用 IconLoader 从插件资源中加载 SVG 图标
-            IconLoader.findIcon("/META-INF/pluginIcon.svg", javaClass)
+            // 加载插件图标并缩放到 16x16（DirectoryProjectGenerator 要求的尺寸）
+            val originalIcon = IconLoader.findIcon("/META-INF/pluginIcon.svg", javaClass)
+            if (originalIcon != null) {
+                // 使用 IconUtil 缩放图标到 16x16
+                com.intellij.util.IconUtil.scale(originalIcon, null, 16f / originalIcon.iconWidth)
+            } else {
+                logger.warn("Plugin icon not found at /META-INF/pluginIcon.svg")
+                null
+            }
         } catch (e: Exception) {
-            logger.error("Failed to load logo", e)
+            logger.error("Failed to load or scale logo", e)
             null
         }
     }
