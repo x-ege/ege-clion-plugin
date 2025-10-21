@@ -45,7 +45,7 @@ cd /Volumes/HikData/work/git/xege-intellij-plugin
 
 在测试 IDE 中：
 1. 进入 `Settings/Preferences → Plugins`
-2. 查找 "Xege IntelliJ Plugin"
+2. 查找 "Xege IntelliJ Creator"
 3. 确认插件已启用
 
 ### 方法 3: 查看日志

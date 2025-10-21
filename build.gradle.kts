@@ -3,7 +3,7 @@ plugins {
     kotlin("jvm") version "2.1.21"
 }
 
-group = "org.xege.clion"
+group = "org.xege.creator"
 version = project.findProperty("pluginVersion") as String? ?: "1.0.0"
 
 repositories {

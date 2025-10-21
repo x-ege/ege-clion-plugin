@@ -3,7 +3,7 @@
 一个用于 JetBrains IntelliJ 系列 IDE（特别是 CLion）的 EGE C++ 图形库项目向导插件。
 
 **插件信息**:
-- **插件 ID**: `org.xege.clion`
+- **插件 ID**: `org.xege.creator`
 - **默认命名空间**: `org.xege`
 - **作者**: wysaid
 - **邮箱**: this@xege.org
