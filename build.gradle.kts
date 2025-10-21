@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "org.xege.clion"
-version = "1.0-SNAPSHOT"
+version = project.findProperty("pluginVersion") as String? ?: "1.0.0"
 
 repositories {
     mavenCentral()
@@ -21,7 +21,15 @@ intellij {
 }
 
 tasks.patchPluginXml {
-    changeNotes.set("Initial version.")
+    version.set(project.version.toString())
+    changeNotes.set("""
+        <h3>Version ${project.version}</h3>
+        <ul>
+            <li>EGE 图形库项目向导支持</li>
+            <li>CLion 专属集成</li>
+            <li>多平台支持 (Windows, macOS, Linux)</li>
+        </ul>
+    """.trimIndent())
 }
 
 tasks {
