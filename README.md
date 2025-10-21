@@ -2,6 +2,13 @@
 
 一个用于 JetBrains IntelliJ 系列 IDE（特别是 CLion）的 EGE C++ 图形库项目向导插件。
 
+**插件信息**:
+- **插件 ID**: `org.xege.clion`
+- **默认命名空间**: `org.xege`
+- **作者**: wysaid
+- **邮箱**: this@xege.org
+- **GitHub**: https://github.com/x-ege/ege-jetbrains-plugin
+
 ## 🎯 功能特性
 
 ### ✅ 项目模板向导
@@ -29,7 +36,7 @@ xege-intellij-plugin/
 │   └── main/
 │       ├── kotlin/
 │       │   └── org/xege/
-│       │       ├── MyPluginAction.kt              # 示例 Action
+│       │       ├── HelpAction.kt              # 示例 Action
 │       │       └── project/
 │       │           └── EgeProjectGenerator.kt     # 项目生成器
 │       └── resources/
@@ -160,3 +167,10 @@ my-ege-project/
 - [JetBrains Plugin Development Documentation](https://plugins.jetbrains.com/docs/intellij/welcome.html)
 - [EGE 官方网站](https://xege.org/)
 - [EGE GitHub](https://github.com/wysaid/xege)
+- [插件 GitHub](https://github.com/x-ege/ege-jetbrains-plugin)
+
+## 👤 作者
+
+- **Author**: wysaid
+- **Email**: this@xege.org
+- **GitHub**: https://github.com/x-ege/ege-jetbrains-plugin

@@ -3,7 +3,7 @@ plugins {
     kotlin("jvm") version "2.1.21"
 }
 
-group = "org.xege"
+group = "org.xege.clion"
 version = "1.0-SNAPSHOT"
 
 repositories {

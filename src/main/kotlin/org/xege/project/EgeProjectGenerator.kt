@@ -65,7 +65,8 @@ class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
     }
 
     override fun buildUI(settingsStep: com.intellij.ide.util.projectWizard.SettingsStep) {
-        settingsStep.addSettingsComponent(panel)
+        // 不需要在这里添加组件，getComponent() 返回的组件会自动显示
+        // 这个方法可以用于添加额外的设置字段到 settingsStep，但我们不需要
     }
 
     override fun validate(): ValidationInfo? {
