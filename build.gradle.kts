@@ -17,6 +17,7 @@ dependencies {
 intellij {
     version.set("2023.3")
     type.set("CL") // CLion
+    plugins.set(listOf("com.intellij.clion"))
 }
 
 tasks.patchPluginXml {

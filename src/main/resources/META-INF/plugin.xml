@@ -5,21 +5,18 @@
     <vendor email="this@xege.org" url="https://github.com/x-ege/ege-jetbrains-plugin">wysaid</vendor>
     
     <description>
-        EGE (Easy Graphics Engine) 针对 IntelliJ IDEA 系列 IDE 的插件，主要支持 Clion.
+        EGE (Easy Graphics Engine) 针对 CLion IDE 的专属插件，提供简单易用的图形编程支持。
     </description>
     
     <depends>com.intellij.modules.platform</depends>
-    <!-- CLion C/C++ 支持 -->
+    <!-- CLion C/C++ 支持 - 必需依赖 -->
     <depends>com.intellij.clion</depends>
-
-    <!-- <depends>com.intellij.clion</depends> -->
-    <!-- <directoryProjectGenerator implementation="cn.butterfly.template2.module.CTemplateGenerator"/> -->
 
     <extensions defaultExtensionNs="com.intellij">
         <!-- 注册通知组 -->
         <notificationGroup id="Xege Plugin Notifications" displayType="BALLOON"/>
         
-        <!-- 注册项目模板 -->
+        <!-- 注册 CLion 项目生成器 - 使用 CLionProjectGenerator -->
         <directoryProjectGenerator implementation="org.xege.project.EgeProjectGenerator"/>
     </extensions>
 

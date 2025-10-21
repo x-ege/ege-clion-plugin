@@ -10,7 +10,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ValidationInfo
 import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.platform.DirectoryProjectGenerator
+import com.jetbrains.cidr.cpp.cmake.projectWizard.generators.CLionProjectGenerator
 import com.intellij.platform.ProjectGeneratorPeer
 import java.awt.BorderLayout
 import java.awt.Component
@@ -18,12 +18,17 @@ import java.io.File
 import javax.swing.*
 
 /**
+ * 选择新建项目时的默认 Demo
+ */
+private val DEMO_OPTIONS = arrayOf("Hello World")
+
+/**
  * EGE 项目设置
  * 保存项目创建选项
  */
 data class EgeProjectSettings(
     val useSourceCode: Boolean = false,
-    val cppStandard: String = "C++17"
+    val demoOption: String = DEMO_OPTIONS.first()
 )
 
 /**
@@ -32,12 +37,12 @@ data class EgeProjectSettings(
  */
 class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
     private val useSourceCodeCheckbox = JCheckBox("直接使用 EGE 源码作为项目依赖", false)
-    private val cppStandardComboBox = JComboBox(arrayOf("C++11", "C++14", "C++17", "C++20", "C++23"))
+    private val demoOptionComboBox = JComboBox(DEMO_OPTIONS)
     private val panel: JPanel = JPanel(BorderLayout())
 
     init {
-        // 设置默认选择为 C++17
-        cppStandardComboBox.selectedItem = "C++17"
+        // 设置默认选择为数组的第一个元素
+        demoOptionComboBox.selectedItem = DEMO_OPTIONS.first()
 
         // 创建选项面板
         val optionsPanel = JPanel()
@@ -57,20 +62,19 @@ class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
 
         // 添加复选框
         optionsPanel.add(useSourceCodeCheckbox)
-        
+
         optionsPanel.add(Box.createVerticalStrut(15))
-        
-        // 添加 C++ 标准选择
-        val standardPanel = JPanel()
-        standardPanel.layout = BoxLayout(standardPanel, BoxLayout.X_AXIS)
-        standardPanel.alignmentX = Component.LEFT_ALIGNMENT
-        standardPanel.add(JLabel("Language standard: "))
-        standardPanel.add(Box.createHorizontalStrut(5))
-        cppStandardComboBox.maximumSize = cppStandardComboBox.preferredSize
-        standardPanel.add(cppStandardComboBox)
-        standardPanel.add(Box.createHorizontalGlue())
-        
-        optionsPanel.add(standardPanel)
+
+        val demoOptionPanel = JPanel()
+        demoOptionPanel.layout = BoxLayout(demoOptionPanel, BoxLayout.X_AXIS)
+        demoOptionPanel.alignmentX = Component.LEFT_ALIGNMENT
+        demoOptionPanel.add(JLabel("Demo Template: "))
+        demoOptionPanel.add(Box.createHorizontalStrut(5))
+        demoOptionComboBox.maximumSize = demoOptionComboBox.preferredSize
+        demoOptionPanel.add(demoOptionComboBox)
+        demoOptionPanel.add(Box.createHorizontalGlue())
+
+        optionsPanel.add(demoOptionPanel)
 
         panel.add(optionsPanel, BorderLayout.NORTH)
     }
@@ -78,7 +82,7 @@ class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
     override fun getSettings(): EgeProjectSettings {
         return EgeProjectSettings(
             useSourceCode = useSourceCodeCheckbox.isSelected,
-            cppStandard = cppStandardComboBox.selectedItem as String
+            demoOption = demoOptionComboBox.selectedItem as String
         )
     }
 
@@ -107,9 +111,9 @@ class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
 
 /**
  * EGE 项目生成器
- * 用于在 IDE 的新建项目向导中创建 EGE C++ 项目
+ * 用于在 CLion 的新建项目向导中创建 EGE C++ 项目
  */
-class EgeProjectGenerator : DirectoryProjectGenerator<EgeProjectSettings>() {
+class EgeProjectGenerator : CLionProjectGenerator<EgeProjectSettings>() {
     private val logger = Logger.getInstance(EgeProjectGenerator::class.java)
 
     override fun getName(): String = "Easy Graphics Engine"
