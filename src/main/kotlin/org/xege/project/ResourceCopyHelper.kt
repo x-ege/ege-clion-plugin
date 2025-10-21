@@ -259,15 +259,19 @@ object ResourceCopyHelper {
                             file.copyTo(targetFile, overwrite = true)
                             logger.info("Copied ${file.name} to ${targetFile.absolutePath}")
                         }
-                        // 复制 .vscode 目录
+                        // 复制 .vscode 目录（如果目标文件已存在则跳过，不覆盖）
                         else if (file.isDirectory && file.name == ".vscode") {
                             val targetVscodeDir = File(targetDir, ".vscode")
                             targetVscodeDir.mkdirs()
                             file.listFiles()?.forEach { vscodeFile ->
                                 if (vscodeFile.isFile) {
                                     val targetFile = File(targetVscodeDir, vscodeFile.name)
-                                    vscodeFile.copyTo(targetFile, overwrite = true)
-                                    logger.info("Copied .vscode/${vscodeFile.name} to ${targetFile.absolutePath}")
+                                    if (targetFile.exists()) {
+                                        logger.info("Skipping existing file: .vscode/${vscodeFile.name}")
+                                    } else {
+                                        vscodeFile.copyTo(targetFile, overwrite = false)
+                                        logger.info("Copied .vscode/${vscodeFile.name} to ${targetFile.absolutePath}")
+                                    }
                                 }
                             }
                         }
@@ -322,11 +326,16 @@ object ResourceCopyHelper {
      */
     fun copyEgeLibrary(targetDir: File, useSourceCode: Boolean, indicator: ProgressIndicator? = null) {
         val egeDir = File(targetDir, "ege")
+        val egeHeader = File(egeDir, "include/ege.h")
         
-        // 如果 ege 目录已存在，先删除
         if (egeDir.exists()) {
-            logger.info("EGE directory already exists, deleting: ${egeDir.absolutePath}")
-            egeDir.deleteRecursively()
+            if (egeHeader.exists()) {
+                logger.info("EGE directory and header already exist, skipping copy: ${egeDir.absolutePath}")
+                return
+            } else {
+                logger.info("EGE directory exists but header missing, deleting: ${egeDir.absolutePath}")
+                egeDir.deleteRecursively()
+            }
         }
         
         // 创建新的 ege 目录
