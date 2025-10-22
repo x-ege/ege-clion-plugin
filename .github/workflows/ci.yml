@@ -37,6 +37,9 @@ jobs:
       - name: Verify plugin
         run: ./gradlew verifyPlugin
 
+      - name: Check CLion version compatibility
+        run: ./gradlew checkClionVersion
+
       - name: Upload build artifact
         if: success()
         uses: actions/upload-artifact@v4
