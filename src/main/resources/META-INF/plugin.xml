@@ -1,7 +1,7 @@
-<idea-plugin>
+<idea-plugin require-restart="false">
     <id>org.xege.creator</id>
     <name>Xege Creator</name>
-    <!-- 版本号由 Gradle 构建时自动注入，不需要在此硬编码 -->
+    <!-- 版本号由 Gradle 构建时自动注入 -->
     <vendor email="this@xege.org" url="https://github.com/x-ege/ege-clion-plugin">wysaid</vendor>
     
     <!-- 国际化资源包 -->
@@ -11,8 +11,10 @@
         EGE (Easy Graphics Engine) plugin for CLion IDE, providing simple graphics programming support.
     </description>
     
-    <!-- 兼容性范围：从 2023.3 (233) 到 2025.1 (251) - 支持最新版本 -->
-    <idea-version since-build="233" until-build="251.*"/>
+    <!-- 兼容性范围: 从 CLion 2023.3 (233) 开始，向后持续兼容 -->
+    <idea-version since-build="233"/>
+    
+    <!-- 更新日志由 Gradle 构建时从 CHANGELOG.md 注入 -->
     
     <depends>com.intellij.modules.platform</depends>
     <!-- CLion C/C++ 支持 - 必需依赖 -->

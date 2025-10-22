@@ -22,16 +22,14 @@ intellij {
 
 tasks.patchPluginXml {
     version.set(project.version.toString())
-    sinceBuild.set("233")
-    untilBuild.set("251.*")
     changeNotes.set("""
         <h3>Version ${project.version}</h3>
         <ul>
-            <li>EGE 图形库项目向导支持</li>
-            <li>CLion 专属集成</li>
-            <li>多平台支持 (Windows, macOS, Linux)</li>
-            <li>支持 CLion 2023.3 - 2025.1 (最新版本)</li>
-            <li>更新废弃的 API</li>
+            <li>Support for the <b>easy graphics engine</b> project wizard</li>
+            <li>CLion-specific integration</li>
+            <li>Cross-platform support (Windows, macOS, Linux)</li>
+            <li>Supports CLion 2023.3 and above</li>
+            <li>Updated deprecated APIs</li>
         </ul>
     """.trimIndent())
 }
