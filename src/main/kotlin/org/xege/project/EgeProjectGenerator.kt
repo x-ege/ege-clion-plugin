@@ -19,9 +19,104 @@ import java.io.File
 import javax.swing.*
 
 /**
- * 选择新建项目时的默认 Demo
+ * Demo 选项数据类
+ * @param displayName 显示名称（在下拉列表中显示）
+ * @param fileName 文件名（实际的 .cpp 文件名，null 表示使用默认的 Hello World）
  */
-private val DEMO_OPTIONS = arrayOf("Hello World")
+data class DemoOption(
+    val displayName: String,
+    val fileName: String?
+) {
+    override fun toString(): String = displayName
+}
+
+/**
+ * Demo 选项管理器
+ * 负责从资源目录动态加载 Demo 列表
+ */
+object DemoOptionsManager {
+    private val logger = Logger.getInstance(DemoOptionsManager::class.java)
+    
+    /**
+     * 获取所有可用的 Demo 选项
+     * 包括默认的 Hello World 和 ege_demos 目录下的所有 .cpp 文件
+     */
+    fun getDemoOptions(): Array<DemoOption> {
+        val options = mutableListOf<DemoOption>()
+        
+        // 添加默认的 Hello World 选项
+        options.add(DemoOption("Hello World", null))
+        
+        // 从 ege_demos 目录动态加载 Demo 文件
+        try {
+            val demoFiles = discoverDemoFiles()
+            demoFiles.sorted().forEach { fileName ->
+                // 将文件名转换为显示名称：去掉 .cpp 后缀，将下划线替换为空格
+                val displayName = fileName
+                    .removeSuffix(".cpp")
+                    .replace("_", " ")
+                    .split(" ")
+                    .joinToString(" ") { word ->
+                        word.replaceFirstChar { it.uppercaseChar() }
+                    }
+                options.add(DemoOption(displayName, fileName))
+            }
+            logger.info("Loaded ${options.size} demo options")
+        } catch (e: Exception) {
+            logger.error("Failed to load demo options", e)
+        }
+        
+        return options.toTypedArray()
+    }
+    
+    /**
+     * 扫描 ege_demos 目录，发现所有 .cpp 文件
+     */
+    private fun discoverDemoFiles(): List<String> {
+        val files = mutableListOf<String>()
+        val resourcePath = "/assets/ege_demos"
+        
+        try {
+            val resourceUrl = javaClass.getResource(resourcePath)
+            if (resourceUrl == null) {
+                logger.warn("Resource directory not found: $resourcePath")
+                return emptyList()
+            }
+            
+            val uri = resourceUrl.toURI()
+            
+            if (uri.scheme == "jar") {
+                // 从 JAR 文件扫描
+                val jarPath = uri.toString().substringAfter("jar:file:").substringBefore("!")
+                val jarFile = java.util.jar.JarFile(java.io.File(java.net.URI("file:$jarPath")))
+                
+                val prefix = resourcePath.removePrefix("/")
+                jarFile.entries().asIterator().forEach { entry ->
+                    val name = entry.name
+                    if (name.startsWith(prefix) && !entry.isDirectory && name.endsWith(".cpp")) {
+                        val fileName = name.substringAfterLast("/")
+                        files.add(fileName)
+                    }
+                }
+                jarFile.close()
+            } else {
+                // 从文件系统扫描
+                val dir = java.io.File(uri)
+                if (dir.exists() && dir.isDirectory) {
+                    dir.listFiles()?.forEach { file ->
+                        if (file.isFile && file.name.endsWith(".cpp")) {
+                            files.add(file.name)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logger.error("Failed to discover demo files in $resourcePath", e)
+        }
+        
+        return files
+    }
+}
 
 /**
  * 获取本地化的Demo选项标签
@@ -34,7 +129,7 @@ private fun getDemoLabel(): String = XegeBundle.message("options.demo.label")
  */
 data class EgeProjectSettings(
     val useSourceCode: Boolean = false,
-    val demoOption: String = DEMO_OPTIONS.first()
+    val demoOption: DemoOption = DemoOptionsManager.getDemoOptions().first()
 )
 
 /**
@@ -43,12 +138,13 @@ data class EgeProjectSettings(
  */
 class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
     private val useSourceCodeCheckbox = JCheckBox(XegeBundle.message("options.checkbox.use.source"), false)
-    private val demoOptionComboBox = JComboBox(DEMO_OPTIONS)
+    private val demoOptions = DemoOptionsManager.getDemoOptions()
+    private val demoOptionComboBox = JComboBox(demoOptions)
     private val panel: JPanel = JPanel(BorderLayout())
 
     init {
         // 设置默认选择为数组的第一个元素
-        demoOptionComboBox.selectedItem = DEMO_OPTIONS.first()
+        demoOptionComboBox.selectedItem = demoOptions.first()
 
         // 创建选项面板
         val optionsPanel = JPanel()
@@ -82,7 +178,7 @@ class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
     override fun getSettings(): EgeProjectSettings {
         return EgeProjectSettings(
             useSourceCode = useSourceCodeCheckbox.isSelected,
-            demoOption = demoOptionComboBox.selectedItem as String
+            demoOption = demoOptionComboBox.selectedItem as DemoOption
         )
     }
 
@@ -201,7 +297,7 @@ class EgeProjectGenerator : CLionProjectGenerator<EgeProjectSettings>() {
             // 第一步：复制 cmake 模板文件 (30%)
             indicator.fraction = 0.1
             indicator.text = XegeBundle.message("generator.task.copying.cmake")
-            ResourceCopyHelper.copyCMakeTemplateFiles(targetPath, settings.useSourceCode)
+            ResourceCopyHelper.copyCMakeTemplateFiles(targetPath, settings.useSourceCode, settings.demoOption.fileName)
 
             // 第二步：根据选项复制对应的 EGE 资源
             indicator.fraction = 0.4
