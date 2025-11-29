@@ -15,15 +15,17 @@
 #include <cstring>
 
 namespace ccap {
-bool inplaceConvertFrameYUV2RGBColor(VideoFrame* frame, PixelFormat toFormat, bool verticalFlip) { /// (NV12/I420) -> (BGR24/BGRA32)
+bool inplaceConvertFrameYUV2RGBColor(VideoFrame* frame, PixelFormat toFormat, bool verticalFlip) { /// (NV12/I420/YUYV/UYVY) -> (BGR24/BGRA32)
 
-    /// TODO: 这里修正一下 toFormat, 只支持 YUV -> (BGR24/BGRA24). 简化一下 SDK 的设计. 后续再完善.
+    /// TODO: Fix toFormat here, only support YUV -> (BGR24/BGRA32). Simplify SDK design. Will improve later.
 
     auto inputFormat = frame->pixelFormat;
     assert((inputFormat & kPixelFormatYUVColorBit) != 0 && (toFormat & kPixelFormatYUVColorBit) == 0);
     bool isInputNV12 = pixelFormatInclude(inputFormat, PixelFormat::NV12);
+    bool isInputYUYV = pixelFormatInclude(inputFormat, PixelFormat::YUYV);
+    bool isInputUYVY = pixelFormatInclude(inputFormat, PixelFormat::UYVY);
     bool outputHasAlpha = toFormat & kPixelFormatAlphaColorBit;
-    bool isOutputBGR = toFormat & kPixelFormatBGRBit; // 不是 BGR 就是 RGB
+    bool isOutputBGR = toFormat & kPixelFormatBGRBit; // If not BGR, then RGB
 
     uint8_t* inputData0 = frame->data[0];
     uint8_t* inputData1 = frame->data[1];
@@ -45,57 +47,73 @@ bool inplaceConvertFrameYUV2RGBColor(VideoFrame* frame, PixelFormat toFormat, bo
     frame->stride[2] = 0;
     frame->pixelFormat = toFormat;
 
-    if (isInputNV12) { // NV12 -> BGR24, libyuv 里面的 RGB24 实际上是 BGR24
+    if (isInputNV12) { // NV12 -> BGR24, RGB24 in libyuv is actually BGR24
 
         if (outputHasAlpha) {
-#if ENABLE_LIBYUV
-            return libyuv::NV12ToARGB(inputData0, stride0, inputData1, stride1, frame->data[0], newLineSize, width, height) == 0;
-#else
             if (isOutputBGR) {
                 nv12ToBgra32(inputData0, stride0, inputData1, stride1, frame->data[0], newLineSize, width, height);
             } else {
                 nv12ToRgba32(inputData0, stride0, inputData1, stride1, frame->data[0], newLineSize, width, height);
             }
             return true;
-#endif
         } else {
-#if ENABLE_LIBYUV
-            return libyuv::NV12ToRGB24(inputData0, stride0, inputData1, stride1, frame->data[0], newLineSize, width, height) == 0;
-#else
             if (isOutputBGR) {
                 nv12ToBgr24(inputData0, stride0, inputData1, stride1, frame->data[0], newLineSize, width, height);
             } else {
                 nv12ToRgb24(inputData0, stride0, inputData1, stride1, frame->data[0], newLineSize, width, height);
             }
             return true;
-#endif
+        }
+    } else if (isInputYUYV) { // YUYV -> BGR24/BGRA32
+
+        if (outputHasAlpha) {
+            if (isOutputBGR) {
+                yuyvToBgra32(inputData0, stride0, frame->data[0], newLineSize, width, height);
+            } else {
+                yuyvToRgba32(inputData0, stride0, frame->data[0], newLineSize, width, height);
+            }
+            return true;
+        } else {
+            if (isOutputBGR) {
+                yuyvToBgr24(inputData0, stride0, frame->data[0], newLineSize, width, height);
+            } else {
+                yuyvToRgb24(inputData0, stride0, frame->data[0], newLineSize, width, height);
+            }
+            return true;
+        }
+    } else if (isInputUYVY) { // UYVY -> BGR24/BGRA32
+
+        if (outputHasAlpha) {
+            if (isOutputBGR) {
+                uyvyToBgra32(inputData0, stride0, frame->data[0], newLineSize, width, height);
+            } else {
+                uyvyToRgba32(inputData0, stride0, frame->data[0], newLineSize, width, height);
+            }
+            return true;
+        } else {
+            if (isOutputBGR) {
+                uyvyToBgr24(inputData0, stride0, frame->data[0], newLineSize, width, height);
+            } else {
+                uyvyToRgb24(inputData0, stride0, frame->data[0], newLineSize, width, height);
+            }
+            return true;
         }
     } else { // I420 -> BGR24
 
         if (outputHasAlpha) {
-#if ENABLE_LIBYUV
-            return libyuv::I420ToARGB(inputData0, stride0, inputData1, stride1, inputData2, stride2, frame->data[0], newLineSize, width,
-                                      height) == 0;
-#else
             if (isOutputBGR) {
                 i420ToBgra32(inputData0, stride0, inputData1, stride1, inputData2, stride2, frame->data[0], newLineSize, width, height);
             } else {
                 i420ToRgba32(inputData0, stride0, inputData1, stride1, inputData2, stride2, frame->data[0], newLineSize, width, height);
             }
             return true;
-#endif
         } else {
-#if ENABLE_LIBYUV
-            return libyuv::I420ToRGB24(inputData0, stride0, inputData1, stride1, inputData2, stride2, frame->data[0], newLineSize, width,
-                                       height) == 0;
-#else
             if (isOutputBGR) {
                 i420ToBgr24(inputData0, stride0, inputData1, stride1, inputData2, stride2, frame->data[0], newLineSize, width, height);
             } else {
                 i420ToRgb24(inputData0, stride0, inputData1, stride1, inputData2, stride2, frame->data[0], newLineSize, width, height);
             }
             return true;
-#endif
         }
     }
 
@@ -103,7 +121,7 @@ bool inplaceConvertFrameYUV2RGBColor(VideoFrame* frame, PixelFormat toFormat, bo
 }
 
 bool inplaceConvertFrameRGB(VideoFrame* frame, PixelFormat toFormat, bool verticalFlip) {
-    // rgb(a) 互转
+    // RGB(A) interconversion
 
     uint8_t* inputBytes = frame->data[0];
     int inputLineSize = frame->stride[0];
@@ -132,7 +150,7 @@ bool inplaceConvertFrameRGB(VideoFrame* frame, PixelFormat toFormat, bool vertic
         if (inputChannelCount == 4) // RGBA <-> BGRA
         {
 #if ENABLE_LIBYUV
-            const uint8_t kShuffleMap[4] = { 2, 1, 0, 3 }; // RGBA->BGRA 或 BGRA->RGBA
+            const uint8_t kShuffleMap[4] = { 2, 1, 0, 3 }; // RGBA->BGRA or BGRA->RGBA
             libyuv::ARGBShuffle(inputBytes, inputLineSize, outputBytes, newLineSize, kShuffleMap, frame->width, height);
 #else
             rgbaToBgra(inputBytes, inputLineSize, outputBytes, newLineSize, frame->width, height);
@@ -162,7 +180,7 @@ bool inplaceConvertFrameRGB(VideoFrame* frame, PixelFormat toFormat, bool vertic
     return true;
 }
 
-bool inplaceConvertFrame(VideoFrame* frame, PixelFormat toFormat, bool verticalFlip) {
+inline bool inplaceConvertFrameImp(VideoFrame* frame, PixelFormat toFormat, bool verticalFlip) {
     if (frame->pixelFormat == toFormat) {
         if (verticalFlip && (toFormat & kPixelFormatRGBColorBit)) { // flip upside down
             int srcStride = (int)frame->stride[0];
@@ -172,7 +190,7 @@ bool inplaceConvertFrame(VideoFrame* frame, PixelFormat toFormat, bool verticalF
             frame->allocator->resize(srcStride * height);
             auto* dst = frame->allocator->data();
             frame->data[0] = dst;
-            /// 反向读取
+            /// Read in reverse order
             src = src + srcStride * (height - 1);
             srcStride = -srcStride;
             for (uint32_t i = 0; i < height; ++i) {
@@ -202,6 +220,16 @@ bool inplaceConvertFrame(VideoFrame* frame, PixelFormat toFormat, bool verticalF
     }
 
     return inplaceConvertFrameRGB(frame, toFormat, verticalFlip);
+}
+
+bool inplaceConvertFrame(VideoFrame* frame, PixelFormat toFormat, bool verticalFlip) {
+    auto ret = inplaceConvertFrameImp(frame, toFormat, verticalFlip);
+    if (ret) {
+        assert(frame->pixelFormat == toFormat);
+        assert(frame->allocator != nullptr && frame->data[0] == frame->allocator->data());
+        frame->sizeInBytes = frame->allocator->size();
+    }
+    return ret;
 }
 
 } // namespace ccap

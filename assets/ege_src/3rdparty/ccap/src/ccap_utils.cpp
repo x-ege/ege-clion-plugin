@@ -201,6 +201,16 @@ std::string_view pixelFormatToString(PixelFormat format) {
     case PixelFormat::I420f:
         return "I420f";
 
+    case PixelFormat::YUYV:
+        return "YUYV";
+    case PixelFormat::YUYVf:
+        return "YUYVf";
+
+    case PixelFormat::UYVY:
+        return "UYVY";
+    case PixelFormat::UYVYf:
+        return "UYVYf";
+
     case PixelFormat::RGB24:
         return "RGB24";
     case PixelFormat::RGBA32:
@@ -235,6 +245,43 @@ void setLogLevel(LogLevel level) {
     (void)level;
     fprintf(stderr, "ccap: Log is not enabled in this build.\n");
 #endif
+}
+
+std::string_view errorCodeToString(ErrorCode errorCode) {
+    switch (errorCode) {
+    case ErrorCode::None:
+        return "No error";
+    case ErrorCode::NoDeviceFound:
+        return "No camera device found or device discovery failed";
+    case ErrorCode::InvalidDevice:
+        return "Invalid device name or device index";
+    case ErrorCode::DeviceOpenFailed:
+        return "Camera device open failed";
+    case ErrorCode::DeviceStartFailed:
+        return "Camera start failed";
+    case ErrorCode::DeviceStopFailed:
+        return "Camera stop failed";
+    case ErrorCode::InitializationFailed:
+        return "Initialization failed";
+    case ErrorCode::UnsupportedResolution:
+        return "Requested resolution is not supported";
+    case ErrorCode::UnsupportedPixelFormat:
+        return "Requested pixel format is not supported";
+    case ErrorCode::FrameRateSetFailed:
+        return "Frame rate setting failed";
+    case ErrorCode::PropertySetFailed:
+        return "Property setting failed";
+    case ErrorCode::FrameCaptureTimeout:
+        return "Frame capture timeout";
+    case ErrorCode::FrameCaptureFailed:
+        return "Frame capture failed";
+    case ErrorCode::MemoryAllocationFailed:
+        return "Memory allocation failed";
+    case ErrorCode::InternalError:
+        return "Unknown or internal error";
+    default:
+        return "Unknown error code";
+    }
 }
 
 } // namespace ccap

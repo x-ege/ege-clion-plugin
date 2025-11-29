@@ -10,6 +10,7 @@
 
 #include "ccap_convert_apple.h"
 #include "ccap_convert_avx2.h"
+#include "ccap_convert_neon.h"
 #include "ccap_core.h"
 
 #include <cassert>
@@ -19,6 +20,7 @@
 
 namespace ccap {
 static bool sEnableAppleAccelerate = true;
+static bool sEnableNEON = true;
 
 bool canUseAppleAccelerate() {
     return sEnableAppleAccelerate && hasAppleAccelerate();
@@ -37,11 +39,22 @@ bool enableAppleAccelerate(bool enable) {
     return hasAppleAccelerate() && sEnableAppleAccelerate;
 }
 
+bool canUseNEON() {
+    return sEnableNEON && hasNEON();
+}
+
+bool enableNEON(bool enable) {
+    sEnableNEON = enable;
+    return hasNEON() && sEnableNEON;
+}
+
 ConvertBackend getConvertBackend() {
     if (canUseAppleAccelerate()) {
         return ConvertBackend::AppleAccelerate;
     } else if (canUseAVX2()) {
         return ConvertBackend::AVX2;
+    } else if (canUseNEON()) {
+        return ConvertBackend::NEON;
     } else {
         return ConvertBackend::CPU;
     }
@@ -52,16 +65,24 @@ bool setConvertBackend(ConvertBackend backend) {
     case ConvertBackend::AUTO:
         enableAppleAccelerate(true);
         enableAVX2(true);
+        enableNEON(true);
         return true;
     case ConvertBackend::AVX2:
         enableAppleAccelerate(false);
+        enableNEON(false);
         return enableAVX2(true);
     case ConvertBackend::AppleAccelerate:
         enableAVX2(false);
+        enableNEON(false);
         return enableAppleAccelerate(true);
+    case ConvertBackend::NEON:
+        enableAppleAccelerate(false);
+        enableAVX2(false);
+        return enableNEON(true);
     case ConvertBackend::CPU:
         enableAppleAccelerate(false);
         enableAVX2(false);
+        enableNEON(false);
         return true; // CPU implementation is always available
     default:
         assert(false && "Unsupported ConvertBackend");
@@ -90,7 +111,14 @@ void colorShuffle(const uint8_t* src, int srcStride, uint8_t* dst, int dstStride
     }
 #endif
 
-    // 如果 height < 0，则反向写入 dst，src 顺序读取
+#if ENABLE_NEON_IMP
+    if (canUseNEON()) {
+        colorShuffle_neon<inputChannels, outputChannels, swapRB>(src, srcStride, dst, dstStride, width, height);
+        return;
+    }
+#endif
+
+    // If height < 0, write to dst in reverse order while reading src sequentially
     if (height < 0) {
         height = -height;
         dst = dst + (height - 1) * dstStride;
@@ -138,7 +166,7 @@ template void colorShuffle<3, 3, true>(const uint8_t* src, int srcStride, uint8_
 
 template <bool isBgrColor, bool hasAlpha>
 void nv12ToRgb_common(const uint8_t* srcY, int srcYStride, const uint8_t* srcUV, int srcUVStride, uint8_t* dst, int dstStride, int width, int height, ConvertFlag flag) {
-    // 如果 height < 0，则反向写入 dst，src 顺序读取
+    // If height < 0, write to dst in reverse order while reading src sequentially
     if (height < 0) {
         height = -height;
         dst = dst + (height - 1) * dstStride;
@@ -194,7 +222,7 @@ void nv12ToRgb_common(const uint8_t* srcY, int srcYStride, const uint8_t* srcUV,
 
 template <bool isBgrColor, bool hasAlpha>
 void i420ToRgb_common(const uint8_t* srcY, int srcYStride, const uint8_t* srcU, int srcUStride, const uint8_t* srcV, int srcVStride, uint8_t* dst, int dstStride, int width, int height, ConvertFlag flag) {
-    // 如果 height < 0，则反向写入 dst，src 顺序读取
+    // If height < 0, write to dst in reverse order while reading src sequentially
     if (height < 0) {
         height = -height;
         dst = dst + (height - 1) * dstStride;
@@ -261,6 +289,13 @@ void nv12ToBgr24(const uint8_t* srcY, int srcYStride, const uint8_t* srcUV, int 
     }
 #endif
 
+#if ENABLE_NEON_IMP
+    if (canUseNEON()) {
+        nv12ToBgr24_neon(srcY, srcYStride, srcUV, srcUVStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
     nv12ToRgb_common<true, false>(srcY, srcYStride, srcUV, srcUVStride, dst, dstStride, width, height, flag);
 }
 
@@ -275,6 +310,13 @@ void nv12ToRgb24(const uint8_t* srcY, int srcYStride, const uint8_t* srcUV, int 
 #if ENABLE_AVX2_IMP
     if (canUseAVX2()) {
         nv12ToRgb24_avx2(srcY, srcYStride, srcUV, srcUVStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+#if ENABLE_NEON_IMP
+    if (canUseNEON()) {
+        nv12ToRgb24_neon(srcY, srcYStride, srcUV, srcUVStride, dst, dstStride, width, height, flag);
         return;
     }
 #endif
@@ -297,6 +339,13 @@ void nv12ToBgra32(const uint8_t* srcY, int srcYStride, const uint8_t* srcUV, int
     }
 #endif
 
+#if ENABLE_NEON_IMP
+    if (canUseNEON()) {
+        nv12ToBgra32_neon(srcY, srcYStride, srcUV, srcUVStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
     nv12ToRgb_common<true, true>(srcY, srcYStride, srcUV, srcUVStride, dst, dstStride, width, height, flag);
 }
 
@@ -311,6 +360,13 @@ void nv12ToRgba32(const uint8_t* srcY, int srcYStride, const uint8_t* srcUV, int
 #if ENABLE_AVX2_IMP
     if (canUseAVX2()) {
         nv12ToRgba32_avx2(srcY, srcYStride, srcUV, srcUVStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+#if ENABLE_NEON_IMP
+    if (canUseNEON()) {
+        nv12ToRgba32_neon(srcY, srcYStride, srcUV, srcUVStride, dst, dstStride, width, height, flag);
         return;
     }
 #endif
@@ -333,6 +389,13 @@ void i420ToBgr24(const uint8_t* srcY, int srcYStride, const uint8_t* srcU, int s
     }
 #endif
 
+#if ENABLE_NEON_IMP
+    if (canUseNEON()) {
+        i420ToBgr24_neon(srcY, srcYStride, srcU, srcUStride, srcV, srcVStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
     i420ToRgb_common<true, false>(srcY, srcYStride, srcU, srcUStride, srcV, srcVStride, dst, dstStride, width, height, flag);
 }
 
@@ -347,6 +410,13 @@ void i420ToRgb24(const uint8_t* srcY, int srcYStride, const uint8_t* srcU, int s
 #if ENABLE_AVX2_IMP
     if (canUseAVX2()) {
         i420ToRgb24_avx2(srcY, srcYStride, srcU, srcUStride, srcV, srcVStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+#if ENABLE_NEON_IMP
+    if (canUseNEON()) {
+        i420ToRgb24_neon(srcY, srcYStride, srcU, srcUStride, srcV, srcVStride, dst, dstStride, width, height, flag);
         return;
     }
 #endif
@@ -369,6 +439,13 @@ void i420ToBgra32(const uint8_t* srcY, int srcYStride, const uint8_t* srcU, int 
     }
 #endif
 
+#if ENABLE_NEON_IMP
+    if (canUseNEON()) {
+        i420ToBgra32_neon(srcY, srcYStride, srcU, srcUStride, srcV, srcVStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
     i420ToRgb_common<true, true>(srcY, srcYStride, srcU, srcUStride, srcV, srcVStride, dst, dstStride, width, height, flag);
 }
 
@@ -387,7 +464,274 @@ void i420ToRgba32(const uint8_t* srcY, int srcYStride, const uint8_t* srcU, int 
     }
 #endif
 
+#if ENABLE_NEON_IMP
+    if (canUseNEON()) {
+        i420ToRgba32_neon(srcY, srcYStride, srcU, srcUStride, srcV, srcVStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
     i420ToRgb_common<false, true>(srcY, srcYStride, srcU, srcUStride, srcV, srcVStride, dst, dstStride, width, height, flag);
+}
+
+///////////// YUYV/UYVY to RGB functions /////////////
+
+template <bool isBgrColor, bool hasAlpha>
+void yuyvToRgb_common(const uint8_t* src, int srcStride, uint8_t* dst, int dstStride, int width, int height, ConvertFlag flag) {
+    // If height < 0, write to dst in reverse order while reading src sequentially
+    if (height < 0) {
+        height = -height;
+        dst = dst + (height - 1) * dstStride;
+        dstStride = -dstStride;
+    }
+
+    const bool is601 = (flag & ConvertFlag::BT601) != 0;
+    const bool isFullRange = (flag & ConvertFlag::FullRange) != 0;
+    const auto convertFunc = getYuvToRgbFunc(is601, isFullRange);
+    constexpr int channels = hasAlpha ? 4 : 3;
+
+    for (int y = 0; y < height; ++y) {
+        const uint8_t* srcRow = src + y * srcStride;
+        uint8_t* dstRow = dst + y * dstStride;
+
+        for (int x = 0; x < width; x += 2) {
+            // YUYV format: Y0 U0 Y1 V0 (4 bytes for 2 pixels)
+            int baseIdx = (x / 2) * 4;
+            int y0 = srcRow[baseIdx + 0]; // Y0
+            int u = srcRow[baseIdx + 1];  // U0
+            int y1 = srcRow[baseIdx + 2]; // Y1
+            int v = srcRow[baseIdx + 3];  // V0
+
+            int r0, g0, b0, r1, g1, b1;
+            convertFunc(y0, u, v, r0, g0, b0);
+            convertFunc(y1, u, v, r1, g1, b1);
+
+            if constexpr (isBgrColor) {
+                dstRow[x * channels + 0] = b0;
+                dstRow[x * channels + 1] = g0;
+                dstRow[x * channels + 2] = r0;
+
+                dstRow[(x + 1) * channels + 0] = b1;
+                dstRow[(x + 1) * channels + 1] = g1;
+                dstRow[(x + 1) * channels + 2] = r1;
+            } else {
+                dstRow[x * channels + 0] = r0;
+                dstRow[x * channels + 1] = g0;
+                dstRow[x * channels + 2] = b0;
+
+                dstRow[(x + 1) * channels + 0] = r1;
+                dstRow[(x + 1) * channels + 1] = g1;
+                dstRow[(x + 1) * channels + 2] = b1;
+            }
+
+            if constexpr (hasAlpha) {
+                dstRow[x * channels + 3] = 255;
+                dstRow[(x + 1) * channels + 3] = 255;
+            }
+        }
+    }
+}
+
+template <bool isBgrColor, bool hasAlpha>
+void uyvyToRgb_common(const uint8_t* src, int srcStride, uint8_t* dst, int dstStride, int width, int height, ConvertFlag flag) {
+    // If height < 0, write to dst in reverse order while reading src sequentially
+    if (height < 0) {
+        height = -height;
+        dst = dst + (height - 1) * dstStride;
+        dstStride = -dstStride;
+    }
+
+    const bool is601 = (flag & ConvertFlag::BT601) != 0;
+    const bool isFullRange = (flag & ConvertFlag::FullRange) != 0;
+    const auto convertFunc = getYuvToRgbFunc(is601, isFullRange);
+    constexpr int channels = hasAlpha ? 4 : 3;
+
+    for (int y = 0; y < height; ++y) {
+        const uint8_t* srcRow = src + y * srcStride;
+        uint8_t* dstRow = dst + y * dstStride;
+
+        for (int x = 0; x < width; x += 2) {
+            // UYVY format: U0 Y0 V0 Y1 (4 bytes for 2 pixels)
+            int baseIdx = (x / 2) * 4;
+            int u = srcRow[baseIdx + 0];  // U0
+            int y0 = srcRow[baseIdx + 1]; // Y0
+            int v = srcRow[baseIdx + 2];  // V0
+            int y1 = srcRow[baseIdx + 3]; // Y1
+
+            int r0, g0, b0, r1, g1, b1;
+            convertFunc(y0, u, v, r0, g0, b0);
+            convertFunc(y1, u, v, r1, g1, b1);
+
+            if constexpr (isBgrColor) {
+                dstRow[x * channels + 0] = b0;
+                dstRow[x * channels + 1] = g0;
+                dstRow[x * channels + 2] = r0;
+
+                dstRow[(x + 1) * channels + 0] = b1;
+                dstRow[(x + 1) * channels + 1] = g1;
+                dstRow[(x + 1) * channels + 2] = r1;
+            } else {
+                dstRow[x * channels + 0] = r0;
+                dstRow[x * channels + 1] = g0;
+                dstRow[x * channels + 2] = b0;
+
+                dstRow[(x + 1) * channels + 0] = r1;
+                dstRow[(x + 1) * channels + 1] = g1;
+                dstRow[(x + 1) * channels + 2] = b1;
+            }
+
+            if constexpr (hasAlpha) {
+                dstRow[x * channels + 3] = 255;
+                dstRow[(x + 1) * channels + 3] = 255;
+            }
+        }
+    }
+}
+
+// YUYV conversion functions
+void yuyvToBgr24(const uint8_t* src, int srcStride, uint8_t* dst, int dstStride, int width, int height, ConvertFlag flag) {
+#if ENABLE_AVX2_IMP
+    if (canUseAVX2()) {
+        yuyvToBgr24_avx2(src, srcStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+#if ENABLE_NEON_IMP
+    if (canUseNEON()) {
+        yuyvToBgr24_neon(src, srcStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+    yuyvToRgb_common<true, false>(src, srcStride, dst, dstStride, width, height, flag);
+}
+
+void yuyvToRgb24(const uint8_t* src, int srcStride, uint8_t* dst, int dstStride, int width, int height, ConvertFlag flag) {
+#if ENABLE_AVX2_IMP
+    if (canUseAVX2()) {
+        yuyvToRgb24_avx2(src, srcStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+#if ENABLE_NEON_IMP
+    if (canUseNEON()) {
+        yuyvToRgb24_neon(src, srcStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+    yuyvToRgb_common<false, false>(src, srcStride, dst, dstStride, width, height, flag);
+}
+
+void yuyvToBgra32(const uint8_t* src, int srcStride, uint8_t* dst, int dstStride, int width, int height, ConvertFlag flag) {
+#if ENABLE_AVX2_IMP
+    if (canUseAVX2()) {
+        yuyvToBgra32_avx2(src, srcStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+#if ENABLE_NEON_IMP
+    if (canUseNEON()) {
+        yuyvToBgra32_neon(src, srcStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+    yuyvToRgb_common<true, true>(src, srcStride, dst, dstStride, width, height, flag);
+}
+
+void yuyvToRgba32(const uint8_t* src, int srcStride, uint8_t* dst, int dstStride, int width, int height, ConvertFlag flag) {
+#if ENABLE_AVX2_IMP
+    if (canUseAVX2()) {
+        yuyvToRgba32_avx2(src, srcStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+#if ENABLE_NEON_IMP
+    if (canUseNEON()) {
+        yuyvToRgba32_neon(src, srcStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+    yuyvToRgb_common<false, true>(src, srcStride, dst, dstStride, width, height, flag);
+}
+
+// UYVY conversion functions
+void uyvyToBgr24(const uint8_t* src, int srcStride, uint8_t* dst, int dstStride, int width, int height, ConvertFlag flag) {
+#if ENABLE_AVX2_IMP
+    if (canUseAVX2()) {
+        uyvyToBgr24_avx2(src, srcStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+#if ENABLE_NEON_IMP
+    if (canUseNEON()) {
+        uyvyToBgr24_neon(src, srcStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+    uyvyToRgb_common<true, false>(src, srcStride, dst, dstStride, width, height, flag);
+}
+
+void uyvyToRgb24(const uint8_t* src, int srcStride, uint8_t* dst, int dstStride, int width, int height, ConvertFlag flag) {
+#if ENABLE_AVX2_IMP
+    if (canUseAVX2()) {
+        uyvyToRgb24_avx2(src, srcStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+#if ENABLE_NEON_IMP
+    if (canUseNEON()) {
+        uyvyToRgb24_neon(src, srcStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+    uyvyToRgb_common<false, false>(src, srcStride, dst, dstStride, width, height, flag);
+}
+
+void uyvyToBgra32(const uint8_t* src, int srcStride, uint8_t* dst, int dstStride, int width, int height, ConvertFlag flag) {
+#if ENABLE_AVX2_IMP
+    if (canUseAVX2()) {
+        uyvyToBgra32_avx2(src, srcStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+#if ENABLE_NEON_IMP
+    if (canUseNEON()) {
+        uyvyToBgra32_neon(src, srcStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+    uyvyToRgb_common<true, true>(src, srcStride, dst, dstStride, width, height, flag);
+}
+
+void uyvyToRgba32(const uint8_t* src, int srcStride, uint8_t* dst, int dstStride, int width, int height, ConvertFlag flag) {
+#if ENABLE_AVX2_IMP
+    if (canUseAVX2()) {
+        uyvyToRgba32_avx2(src, srcStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+#if ENABLE_NEON_IMP
+    if (canUseNEON()) {
+        uyvyToRgba32_neon(src, srcStride, dst, dstStride, width, height, flag);
+        return;
+    }
+#endif
+
+    uyvyToRgb_common<false, true>(src, srcStride, dst, dstStride, width, height, flag);
 }
 
 static thread_local std::shared_ptr<ccap::Allocator> sSharedAllocator, sSharedAllocator2;

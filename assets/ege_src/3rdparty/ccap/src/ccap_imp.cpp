@@ -8,12 +8,13 @@
 
 #include "ccap_imp.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
-#include <algorithm>
 
 namespace ccap {
 void resetSharedAllocator();
+ErrorCallback getErrorCallback(); // Forward declaration
 
 uint8_t* DefaultAllocator::data() { return m_data; }
 
@@ -109,7 +110,7 @@ std::shared_ptr<VideoFrame> ProviderImp::grab(uint32_t timeoutInMs) {
 
     if (m_availableFrames.empty() && timeoutInMs > 0) {
         if (!isStarted()) {
-            CCAP_LOG_W("ccap: Grab called when camera is not started!");
+            reportError(ErrorCode::DeviceStartFailed, "Grab called when camera is not started");
             return nullptr;
         }
 
@@ -125,7 +126,7 @@ std::shared_ptr<VideoFrame> ProviderImp::grab(uint32_t timeoutInMs) {
 
         m_grabFrameWaiting = false;
         if (!waitSuccess) {
-            CCAP_LOG_V("ccap: Grab timed out after %u ms\n", timeoutInMs);
+            reportError(ErrorCode::FrameCaptureTimeout, "Grab timed out after " + std::to_string(timeoutInMs) + " ms");
             return nullptr;
         }
     }
@@ -188,4 +189,13 @@ std::shared_ptr<VideoFrame> ProviderImp::getFreeFrame() {
     }
     return frame;
 }
+
+void reportError(ErrorCode errorCode, std::string_view description) {
+    if (ErrorCallback globalCallback = getErrorCallback()) {
+        globalCallback(errorCode, description);
+    } else if (ccap::errorLogEnabled()) {
+        CCAP_LOG_E("ccap error code %s: %s\n", errorCodeToString(errorCode).data(), description.data());
+    }
+}
+
 } // namespace ccap

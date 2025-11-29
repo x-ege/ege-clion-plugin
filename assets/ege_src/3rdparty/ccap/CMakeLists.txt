@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.14)
 
+# Set CMAKE_POLICY_VERSION_MINIMUM if not already defined to avoid compatibility issues
+# with newer CMake versions when fetching dependencies like GoogleTest
+if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+endif()
+
 option(CCAP_NO_LOG "Disable logging" OFF)
+option(CCAP_BUILD_SHARED "Build ccap as shared library" OFF)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(CCAP_IS_ROOT_PROJECT ON)
@@ -15,14 +22,7 @@ if(CCAP_IS_ROOT_PROJECT)
     set(CMAKE_FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/build" CACHE PATH "FetchContent base dir" FORCE)
 endif()
 
-project(ccap VERSION 1.0.0 LANGUAGES CXX)
-
-# Currently only Windows and macOS are supported; other platforms are not supported yet
-if(NOT WIN32 AND NOT APPLE)
-    message(WARNING "ccap: Unsupported platform, only Windows and macOS are supported by now.")
-    set(CCAP_BUILD_EXAMPLES OFF CACHE BOOL "Disable examples for unsupported platforms" FORCE)
-    set(CCAP_BUILD_TESTS OFF CACHE BOOL "Disable tests for unsupported platforms" FORCE)
-endif()
+project(ccap VERSION 1.1.0 LANGUAGES C CXX)
 
 # Installation options
 option(CCAP_INSTALL "Generate installation target" ${CCAP_IS_ROOT_PROJECT})
@@ -42,6 +42,45 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum OS X deployment version")
+
+# Unified ARM64 force compilation option, supports both macOS and Windows
+option(CCAP_FORCE_ARM64 "Force ARM64 architecture compilation" OFF)
+
+if(CCAP_FORCE_ARM64)
+    if(APPLE)
+        set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "Build architectures for Mac OS X" FORCE)
+        message(STATUS "ccap: Forcing ARM64 architecture compilation for macOS")
+    elseif(WIN32)
+        set(CMAKE_GENERATOR_PLATFORM "ARM64" CACHE STRING "Generator platform for Windows" FORCE)
+        message(STATUS "ccap: Forcing ARM64 architecture compilation for Windows")
+    endif()
+endif()
+
+# Detect ARM64 architecture and set corresponding compile flags
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "[Aa][Rr][Mm]64|[Aa][Aa][Rr][Cc]h64" OR
+   CMAKE_GENERATOR_PLATFORM MATCHES "[Aa][Rr][Mm]64" OR
+   CMAKE_OSX_ARCHITECTURES MATCHES "[Aa][Rr][Mm]64" OR
+   CCAP_FORCE_ARM64)
+    
+    message(STATUS "ccap: Building for ARM64 architecture")
+    
+    # Windows ARM64 特定设置
+    if(WIN32 AND MSVC)
+        # MSVC 在 ARM64 上自动启用 NEON，添加预处理器定义
+        add_compile_definitions(_M_ARM64=1)
+        message(STATUS "ccap: NEON support enabled for Windows ARM64")
+    endif()
+    
+    # macOS ARM64 特定设置
+    if(APPLE)
+        # Ensure a valid deployment target for macOS arm64
+        if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS "11.0")
+            set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum OS X deployment version" FORCE)
+            message(STATUS "ccap: Bumping macOS deployment target to 11.0 for ARM64")
+        endif()
+        message(STATUS "ccap: NEON support enabled for macOS ARM64")
+    endif()
+endif()
 
 if(NOT MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
@@ -79,7 +118,13 @@ else()
     message(STATUS "ccap: AVX2 support not available")
 endif()
 
-add_library(ccap ${LIB_SOURCE})
+if(CCAP_BUILD_SHARED)
+    add_library(ccap SHARED ${LIB_SOURCE})
+    message(STATUS "ccap: Building as shared library")
+else()
+    add_library(ccap STATIC ${LIB_SOURCE})
+    message(STATUS "ccap: Building as static library")
+endif()
 
 # Set library output name with debug suffix for MSVC
 if(MSVC)
@@ -106,6 +151,14 @@ if(CCAP_NO_LOG)
     message(STATUS "ccap: Disable logging")
 endif()
 
+# Configure shared library export definitions
+if(CCAP_BUILD_SHARED)
+    target_compile_definitions(ccap PUBLIC CCAP_SHARED=1)
+    if(WIN32)
+        target_compile_definitions(ccap PRIVATE CCAP_BUILDING_DLL=1)
+    endif()
+endif()
+
 if(APPLE)
     target_compile_options(ccap PUBLIC -fobjc-arc)
     target_link_libraries(ccap
@@ -117,17 +170,24 @@ if(APPLE)
 
     # Set pkg-config private libs for macOS
     set(PKG_CONFIG_LIBS_PRIVATE "Libs.private: -framework Foundation -framework AVFoundation -framework CoreVideo -framework CoreMedia -framework Accelerate")
+elseif(UNIX AND NOT APPLE AND NOT WIN32)
+    # Linux – link pthread for std::thread support
+    find_package(Threads REQUIRED)
+    target_link_libraries(ccap PUBLIC Threads::Threads)
+
+    # Propagate to pkg-config for consumers
+    set(PKG_CONFIG_LIBS_PRIVATE "Libs.private: -lpthread")
 else()
-    # Windows or other platforms
+    # Windows (including MinGW) or other platforms
     set(PKG_CONFIG_LIBS_PRIVATE "")
 endif()
 
 if(MSVC)
     target_compile_options(ccap PUBLIC
         /MP
-        /std:c++17
-        /Zc:__cplusplus
-        /Zc:preprocessor
+        $<$<COMPILE_LANGUAGE:CXX>:/std:c++17>
+        $<$<COMPILE_LANGUAGE:CXX>:/Zc:__cplusplus>
+        $<$<COMPILE_LANGUAGE:CXX>:/Zc:preprocessor>
     )
 
     if(CCAP_IS_ROOT_PROJECT)
@@ -137,7 +197,7 @@ if(MSVC)
     endif()
 
 else()
-    target_compile_options(ccap PUBLIC -std=c++17)
+    target_compile_options(ccap PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-std=c++17>)
 endif()
 
 # ############### Examples ################

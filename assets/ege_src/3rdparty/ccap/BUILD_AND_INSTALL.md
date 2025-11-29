@@ -23,6 +23,39 @@ This document describes how to build, install, and use the ccap library.
 ./scripts/build_and_install.sh /path/to/install Release
 ```
 
+### Shared Library Build
+
+By default, ccap builds as a static library. To build a shared library instead:
+
+```bash
+mkdir build && cd build
+
+# Build shared library
+cmake .. -DCCAP_BUILD_SHARED=ON
+make -j$(nproc)
+
+# Or with installation
+cmake .. -DCCAP_BUILD_SHARED=ON -DCMAKE_INSTALL_PREFIX=/your/install/path
+make -j$(nproc)
+make install
+```
+
+**Benefits of shared library:**
+- Smaller executable size when linking multiple applications
+- Runtime library updates without recompiling applications
+- Better for Java JNI integration (as mentioned in issue #14)
+
+**Static vs Shared Library:**
+- **Static library** (default): `libccap.a` (Linux/macOS) or `ccap.lib` (Windows)
+- **Shared library**: `libccap.so` (Linux), `libccap.dylib` (macOS) or `ccap.dll` (Windows)
+
+### CMake Options
+
+- `CCAP_BUILD_SHARED`: Build as shared library instead of static (default: OFF)
+- `CCAP_BUILD_EXAMPLES`: Build example applications (default: ON for root project)
+- `CCAP_BUILD_TESTS`: Build unit tests (default: OFF)
+- `CCAP_NO_LOG`: Disable logging functionality (default: OFF)
+
 ### macOS Universal Binary Build
 
 ```bash
@@ -135,6 +168,7 @@ int main() {
 ## Output File Structure
 
 ### Standard Installation (./install)
+
 ```
 install/
 ├── include/              # Header files
@@ -156,6 +190,7 @@ install/
 ```
 
 ### Universal Binary Installation (./build/universal)
+
 ```
 build/universal/          # Contains x86_64 + arm64 universal binary
 ├── include/              # Header files (same as above)
@@ -166,11 +201,13 @@ build/universal/          # Contains x86_64 + arm64 universal binary
 ## Build Options
 
 ### CMake Options
+
 - `CCAP_INSTALL`: Enable install target (default: ON)
 - `CCAP_BUILD_EXAMPLES`: Build examples (default: OFF when used as subproject)
 - `CCAP_BUILD_TESTS`: Build tests (default: OFF when used as subproject)
 
 ### Advanced Usage
+
 ```bash
 # Custom CMake configuration
 mkdir build && cd build

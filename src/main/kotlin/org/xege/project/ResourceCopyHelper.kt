@@ -221,8 +221,9 @@ object ResourceCopyHelper {
      * 复制 CMake 模板文件
      * @param targetDir 目标目录
      * @param useSourceCode 是否使用源码版本
+     * @param demoFileName 选定的 Demo 文件名（null 表示使用默认的 Hello World）
      */
-    fun copyCMakeTemplateFiles(targetDir: File, useSourceCode: Boolean) {
+    fun copyCMakeTemplateFiles(targetDir: File, useSourceCode: Boolean, demoFileName: String? = null) {
         try {
             // 1. 复制 CMakeLists.txt（根据选项选择模板）
             val targetCMake = File(targetDir, "CMakeLists.txt")
@@ -242,19 +243,19 @@ object ResourceCopyHelper {
                 }
             }
             
-            // 2. 复制 cmake_template 目录下的其他所有文件（除了 CMakeLists_*.txt）
+            // 2. 复制 cmake_template 目录下的其他所有文件（除了 CMakeLists_*.txt 和 main.cpp）
             val resourceUrl = javaClass.getResource("/assets/cmake_template")
             if (resourceUrl != null) {
                 val uri = resourceUrl.toURI()
                 if (uri.scheme == "jar") {
                     // 从 JAR 中复制
-                    copyOtherTemplateFilesFromJar(targetDir)
+                    copyOtherTemplateFilesFromJar(targetDir, demoFileName)
                 } else {
                     // 从文件系统复制
                     val templateDir = File(uri)
                     templateDir.listFiles()?.forEach { file ->
-                        // 复制普通文件（排除 CMakeLists_*.txt）
-                        if (file.isFile && !file.name.startsWith("CMakeLists_")) {
+                        // 复制普通文件（排除 CMakeLists_*.txt 和 main.cpp）
+                        if (file.isFile && !file.name.startsWith("CMakeLists_") && file.name != "main.cpp") {
                             val targetFile = File(targetDir, file.name)
                             file.copyTo(targetFile, overwrite = true)
                             logger.info("Copied ${file.name} to ${targetFile.absolutePath}")
@@ -276,6 +277,9 @@ object ResourceCopyHelper {
                             }
                         }
                     }
+                    
+                    // 复制 main.cpp（根据选定的 Demo）
+                    copyMainCppFromFileSystem(templateDir, targetDir, demoFileName)
                 }
             }
         } catch (e: Exception) {
@@ -285,14 +289,50 @@ object ResourceCopyHelper {
     }
     
     /**
-     * 从 JAR 中复制 cmake_template 目录下的其他文件
+     * 从文件系统复制 main.cpp
+     * @param templateDir 模板目录
+     * @param targetDir 目标目录
+     * @param demoFileName 选定的 Demo 文件名（null 表示使用默认的 Hello World）
      */
-    private fun copyOtherTemplateFilesFromJar(targetDir: File) {
+    private fun copyMainCppFromFileSystem(templateDir: File, targetDir: File, demoFileName: String?) {
+        val targetMainCpp = File(targetDir, "main.cpp")
+        
+        if (demoFileName == null) {
+            // 使用默认的 Hello World（cmake_template/main.cpp）
+            val defaultMainCpp = File(templateDir, "main.cpp")
+            if (defaultMainCpp.exists()) {
+                defaultMainCpp.copyTo(targetMainCpp, overwrite = true)
+                logger.info("Copied default main.cpp to ${targetMainCpp.absolutePath}")
+            } else {
+                logger.error("Default main.cpp not found at ${defaultMainCpp.absolutePath}")
+            }
+        } else {
+            // 使用选定的 Demo 文件
+            val demoResourceUrl = javaClass.getResource("/assets/ege_demos/$demoFileName")
+            if (demoResourceUrl != null) {
+                val demoFile = File(demoResourceUrl.toURI())
+                demoFile.copyTo(targetMainCpp, overwrite = true)
+                logger.info("Copied demo $demoFileName to ${targetMainCpp.absolutePath}")
+            } else {
+                logger.error("Demo file not found: /assets/ege_demos/$demoFileName")
+            }
+        }
+    }
+    
+    /**
+     * 从 JAR 中复制 cmake_template 目录下的其他文件
+     * @param targetDir 目标目录
+     * @param demoFileName 选定的 Demo 文件名（null 表示使用默认的 Hello World）
+     */
+    private fun copyOtherTemplateFilesFromJar(targetDir: File, demoFileName: String? = null) {
         // 使用 discoverResourceFiles 动态发现所有文件（包括 .vscode 目录下的文件）
         val allFiles = discoverResourceFiles("/assets/cmake_template", includeHidden = true)
         
-        // 过滤掉 CMakeLists_*.txt 文件
-        val filesToCopy = allFiles.filter { !it.startsWith("CMakeLists_") }
+        // 过滤掉 CMakeLists_*.txt 文件和 main.cpp（如果选择了其他 Demo）
+        val filesToCopy = allFiles.filter { fileName ->
+            !fileName.startsWith("CMakeLists_") && 
+            (demoFileName == null || fileName != "main.cpp")
+        }
         
         logger.info("Found ${filesToCopy.size} files to copy from cmake_template")
         
@@ -315,6 +355,33 @@ object ResourceCopyHelper {
             } catch (e: Exception) {
                 logger.error("Failed to copy $relPath", e)
             }
+        }
+        
+        // 如果选择了 Demo 文件，复制选定的 Demo 作为 main.cpp
+        if (demoFileName != null) {
+            copyDemoFileFromJar(targetDir, demoFileName)
+        }
+    }
+    
+    /**
+     * 从 JAR 中复制选定的 Demo 文件作为 main.cpp
+     */
+    private fun copyDemoFileFromJar(targetDir: File, demoFileName: String) {
+        try {
+            val resourceStream = javaClass.getResourceAsStream("/assets/ege_demos/$demoFileName")
+            if (resourceStream != null) {
+                val targetFile = File(targetDir, "main.cpp")
+                resourceStream.use { input ->
+                    targetFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                logger.info("Copied demo $demoFileName as main.cpp to ${targetFile.absolutePath}")
+            } else {
+                logger.error("Demo file not found: /assets/ege_demos/$demoFileName")
+            }
+        } catch (e: Exception) {
+            logger.error("Failed to copy demo file $demoFileName", e)
         }
     }
     
