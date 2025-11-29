@@ -271,7 +271,7 @@ NSArray<AVCaptureDevice*>* findAllDeviceName() {
     }
 
     if (authStatus != AVAuthorizationStatusAuthorized) {
-        CCAP_NSLOG_E(@"ccap: Camera access not authorized. Current status: %ld", (long)authStatus);
+        reportError(ErrorCode::DeviceOpenFailed, "Camera access not authorized");
         return NO;
     }
 
@@ -297,7 +297,7 @@ NSArray<AVCaptureDevice*>* findAllDeviceName() {
         }
 
         if (![_session canSetSessionPreset:preset]) {
-            CCAP_NSLOG_E(@"ccap: CameraCaptureObjc init - session preset not supported, using AVCaptureSessionPresetHigh");
+            CCAP_NSLOG_W(@"ccap: CameraCaptureObjc init - session preset not supported, using AVCaptureSessionPresetHigh");
             preset = AVCaptureSessionPresetHigh;
         }
 
@@ -322,7 +322,7 @@ NSArray<AVCaptureDevice*>* findAllDeviceName() {
     }
 
     if (![_device hasMediaType:AVMediaTypeVideo]) { /// No video device found
-        CCAP_NSLOG_E(@"ccap: No video device found");
+        reportError(ErrorCode::NoDeviceFound, "No video device found");
         return NO;
     }
 
@@ -331,21 +331,21 @@ NSArray<AVCaptureDevice*>* findAllDeviceName() {
     /// Configure device
 
     NSError* error = nil;
-    [_device lockForConfiguration:&error];
-    if ([_device isFocusModeSupported:AVCaptureFocusModeContinuousAutoFocus]) {
-        [_device setFocusMode:AVCaptureFocusModeContinuousAutoFocus];
-        CCAP_NSLOG_V(@"ccap: Set focus mode to continuous auto focus");
+    if ([_device lockForConfiguration:&error]) {
+        if ([_device isFocusModeSupported:AVCaptureFocusModeContinuousAutoFocus]) {
+            [_device setFocusMode:AVCaptureFocusModeContinuousAutoFocus];
+            CCAP_NSLOG_V(@"ccap: Set focus mode to continuous auto focus");
+        }
+        [_device unlockForConfiguration];
+    } else {
+        CCAP_NSLOG_W(@"ccap: lockForConfiguration failed: %@", error.localizedDescription);
     }
-    [_device unlockForConfiguration];
 
     // Create input device
-    _videoInput = [[AVCaptureDeviceInput alloc] initWithDevice:_device error:&error];
-    if (error) {
-        [AVCaptureDeviceInput deviceInputWithDevice:self.device error:&error];
-        if (error) {
-            CCAP_NSLOG_E(@"ccap: Open camera failed: %@", error);
-            return NO;
-        }
+    _videoInput = [AVCaptureDeviceInput deviceInputWithDevice:_device error:&error];
+    if (!_videoInput || error) {
+        reportError(ErrorCode::DeviceOpenFailed, "Open camera failed" + (error && error.localizedDescription ? (": " + std::string([error.localizedDescription UTF8String])) : ""));
+        return NO;
     }
 
     // Add input device to session
@@ -354,7 +354,7 @@ NSArray<AVCaptureDevice*>* findAllDeviceName() {
 
         CCAP_NSLOG_V(@"ccap: Add input to session");
     } else {
-        CCAP_NSLOG_E(@"ccap: session can not add input");
+        reportError(ErrorCode::DeviceOpenFailed, "Session cannot add input device");
         return NO;
     }
 
@@ -454,6 +454,7 @@ NSArray<AVCaptureDevice*>* findAllDeviceName() {
                 auto fallbackInfo = getPixelFormatInfo(_cvPixelFormat);
                 CCAP_NSLOG_E(@"ccap: Preferred pixel format (%@-%s) not supported, fallback to: (%@-%s)", preferredInfo.name,
                              preferredInfo.description.c_str(), fallbackInfo.name, fallbackInfo.description.c_str());
+                reportError(ErrorCode::UnsupportedPixelFormat, "Preferred pixel format not supported, fallback to: " + fallbackInfo.description);
             }
         }
 
@@ -469,11 +470,27 @@ NSArray<AVCaptureDevice*>* findAllDeviceName() {
         [_session addOutput:_videoOutput];
         CCAP_NSLOG_V(@"ccap: Add output to session");
     } else {
-        CCAP_NSLOG_E(@"ccap: session can not add output");
+        reportError(ErrorCode::DeviceOpenFailed, "Session cannot add output device");
         return NO;
     }
 
     [_session commitConfiguration];
+
+    // Log supported formats and frame rates for debugging
+    if (infoLogEnabled() && _device) {
+        NSMutableString* formatInfo = [NSMutableString stringWithString:@"ccap: Available formats and frame rates:\n"];
+        for (AVCaptureDeviceFormat* format in _device.formats) {
+            CMVideoDimensions dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription);
+            [formatInfo appendFormat:@"  %dx%d: ", dimensions.width, dimensions.height];
+
+            for (AVFrameRateRange* range in format.videoSupportedFrameRateRanges) {
+                [formatInfo appendFormat:@"%.1f-%.1f fps, ", range.minFrameRate, range.maxFrameRate];
+            }
+            [formatInfo appendString:@"\n"];
+        }
+        NSLog(@"%@", formatInfo);
+    }
+
     if (auto fps = _provider->getFrameProperty().fps; fps > 0.0) {
         [self setFrameRate:_provider->getFrameProperty().fps];
     }
@@ -493,45 +510,126 @@ NSArray<AVCaptureDevice*>* findAllDeviceName() {
             [_device respondsToSelector:@selector(setActiveVideoMaxFrameDuration:)]) {
             if (error == nil) {
                 double desiredFps = fps;
-                double distance = 1e9;
+
+                // First, try to find a format that supports the desired fps
+                AVCaptureDeviceFormat* bestFormat = nil;
+                AVFrameRateRange* bestRange = nil;
                 double bestFps = desiredFps;
-                CMTime maxFrameDuration = kCMTimeInvalid;
-                CMTime minFrameDuration = kCMTimeInvalid;
-                for (AVFrameRateRange* r in _device.activeFormat.videoSupportedFrameRateRanges) {
-                    // Check if desired fps is within this range
-                    double actualFps;
-                    if (desiredFps >= r.minFrameRate && desiredFps <= r.maxFrameRate) {
-                        // Desired fps is within range, use it directly
-                        actualFps = desiredFps;
-                    } else {
-                        // Choose the closest boundary value
-                        if (desiredFps < r.minFrameRate) {
-                            actualFps = r.minFrameRate;
-                        } else {
-                            actualFps = r.maxFrameRate;
+                double bestDistance = 1e9;
+
+                // Get current resolution for format matching
+                CGSize currentResolution = _resolution;
+                if (currentResolution.width <= 0 || currentResolution.height <= 0) {
+                    if (_device.activeFormat) {
+                        CMVideoDimensions dimensions = CMVideoFormatDescriptionGetDimensions(_device.activeFormat.formatDescription);
+                        currentResolution = CGSizeMake(dimensions.width, dimensions.height);
+                    }
+                }
+
+                // Search through all formats to find one that supports the desired fps
+                for (AVCaptureDeviceFormat* format in _device.formats) {
+                    CMVideoDimensions dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription);
+
+                    // Skip formats with very different resolutions unless current resolution is unknown
+                    if (currentResolution.width > 0 && currentResolution.height > 0) {
+                        double widthRatio = (double)dimensions.width / currentResolution.width;
+                        double heightRatio = (double)dimensions.height / currentResolution.height;
+                        // Allow some tolerance for resolution matching
+                        if (widthRatio < 0.8 || widthRatio > 1.25 || heightRatio < 0.8 || heightRatio > 1.25) {
+                            continue;
                         }
                     }
 
-                    // Calculate distance to the actual fps we would use
-                    auto newDis = std::abs(actualFps - desiredFps);
-                    if (newDis < distance) {
-                        maxFrameDuration = r.maxFrameDuration;
-                        minFrameDuration = r.minFrameDuration;
-                        distance = newDis;
-                        bestFps = actualFps;
+                    for (AVFrameRateRange* range in format.videoSupportedFrameRateRanges) {
+                        double actualFps;
+                        if (desiredFps >= range.minFrameRate && desiredFps <= range.maxFrameRate) {
+                            // Desired fps is within range, use it directly
+                            actualFps = desiredFps;
+                        } else {
+                            // Choose the closest boundary value
+                            if (desiredFps < range.minFrameRate) {
+                                actualFps = range.minFrameRate;
+                            } else {
+                                actualFps = range.maxFrameRate;
+                            }
+                        }
+
+                        double distance = std::abs(actualFps - desiredFps);
+                        if (distance < bestDistance) {
+                            bestFormat = format;
+                            bestRange = range;
+                            bestFps = actualFps;
+                            bestDistance = distance;
+                        }
                     }
                 }
+
+                // If we found a better format, switch to it
+                if (bestFormat && bestFormat != _device.activeFormat) {
+                    _device.activeFormat = bestFormat;
+                    CCAP_NSLOG_I(@"ccap: Switched to format that supports %g fps", bestFps);
+
+                    // Update resolution after format change
+                    CMVideoDimensions newDimensions = CMVideoFormatDescriptionGetDimensions(bestFormat.formatDescription);
+                    _resolution = CGSizeMake(newDimensions.width, newDimensions.height);
+                    if (_provider) {
+                        auto& prop = _provider->getFrameProperty();
+                        prop.width = newDimensions.width;
+                        prop.height = newDimensions.height;
+                    }
+                }
+
                 fps = bestFps;
 
-                if (CMTIME_IS_VALID(maxFrameDuration) && CMTIME_IS_VALID(minFrameDuration)) {
+                if (bestRange) {
                     // Create precise frame duration for the selected fps
-                    CMTime frameDuration = CMTimeMake(1000000.0, fps * 1000000.0);
+                    // Use tolerance to handle floating-point fps values and cover common NTSC fractional rates
+                    CMTime frameDuration;
+
+                    const double fpsEps = 0.01; // tighter tolerance to distinguish 30.0 vs 29.97, 24.0 vs 23.976
+                    auto approx = [&](double t) { return std::abs(fps - t) < fpsEps; };
+
+                    // Prefer fractional NTSC rates first, then integer rates
+                    if (approx(239.76)) {
+                        // 239.76 fps ~= 240000/1001 -> duration = 1001/240000 s
+                        frameDuration = CMTimeMake(1001, 240000);
+                    } else if (approx(240.0)) {
+                        // 240.00 fps -> 1/240 s
+                        frameDuration = CMTimeMake(1, 240);
+                    } else if (approx(119.88)) {
+                        // 119.88 fps ~= 120000/1001 -> duration = 1001/120000 s
+                        frameDuration = CMTimeMake(1001, 120000);
+                    } else if (approx(120.0)) {
+                        // 120.00 fps -> 1/120 s
+                        frameDuration = CMTimeMake(1, 120);
+                    } else if (approx(59.94)) {
+                        // 59.94 fps ~= 60000/1001 -> duration = 1001/60000 s
+                        frameDuration = CMTimeMake(1001, 60000);
+                    } else if (approx(60.0)) {
+                        // 60.00 fps -> 1/60 s
+                        frameDuration = CMTimeMake(1, 60);
+                    } else if (approx(29.97)) {
+                        // 29.97 fps ~= 30000/1001 -> duration = 1001/30000 s
+                        frameDuration = CMTimeMake(1001, 30000);
+                    } else if (approx(30.0)) {
+                        // 30.00 fps -> 1/30 s
+                        frameDuration = CMTimeMake(1, 30);
+                    } else if (approx(23.976)) {
+                        // 23.976 fps ~= 24000/1001 -> duration = 1001/24000 s
+                        frameDuration = CMTimeMake(1001, 24000);
+                    } else if (approx(24.0)) {
+                        // 24.00 fps -> 1/24 s
+                        frameDuration = CMTimeMake(1, 24);
+                    } else {
+                        // Fallback: use high time scale to retain precision and avoid integer truncation
+                        frameDuration = CMTimeMakeWithSeconds(1.0 / fps, 60000);
+                    }
 
                     // Clamp frameDuration to the supported range to prevent exceptions
-                    if (CMTimeCompare(frameDuration, minFrameDuration) < 0) {
-                        frameDuration = minFrameDuration;
-                    } else if (CMTimeCompare(frameDuration, maxFrameDuration) > 0) {
-                        frameDuration = maxFrameDuration;
+                    if (CMTimeCompare(frameDuration, bestRange.minFrameDuration) < 0) {
+                        frameDuration = bestRange.minFrameDuration;
+                    } else if (CMTimeCompare(frameDuration, bestRange.maxFrameDuration) > 0) {
+                        frameDuration = bestRange.maxFrameDuration;
                     }
 
                     [_device setActiveVideoMinFrameDuration:frameDuration];
@@ -546,14 +644,15 @@ NSArray<AVCaptureDevice*>* findAllDeviceName() {
                         }
                     }
                 } else {
-                    CCAP_NSLOG_E(@"ccap: Desired fps (%g) not supported, skipping", fps);
+                    reportError(ErrorCode::FrameRateSetFailed, "Desired fps (" + std::to_string(fps) + ") not supported, using fallback");
                 }
             }
         } else {
             for (AVCaptureConnection* connection in _videoOutput.connections) {
                 for (AVCaptureInputPort* port in connection.inputPorts) {
                     if ([port.mediaType isEqualToString:AVMediaTypeVideo]) {
-                        auto tm = CMTimeMake(1, fps);
+                        // Use a precise frame duration for legacy API path as well
+                        auto tm = CMTimeMakeWithSeconds(1.0 / fps, 60000);
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
                         connection.videoMinFrameDuration = tm;
@@ -572,13 +671,13 @@ NSArray<AVCaptureDevice*>* findAllDeviceName() {
     auto& internalFormat = _provider->getFrameProperty().cameraPixelFormat;
     switch (internalFormat) {
     case PixelFormat::I420:
-        CCAP_NSLOG_E(@"ccap: I420 is not supported on macOS, fallback to NV12");
+        reportError(ErrorCode::UnsupportedPixelFormat, "I420 is not supported on macOS, fallback to NV12");
     case PixelFormat::NV12:
         _cvPixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
         internalFormat = PixelFormat::NV12;
         break;
     case PixelFormat::I420f:
-        CCAP_NSLOG_E(@"ccap: I420f is not supported on macOS, fallback to NV12f");
+        reportError(ErrorCode::UnsupportedPixelFormat, "I420f is not supported on macOS, fallback to NV12f");
     case PixelFormat::NV12f:
         _cvPixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
         internalFormat = PixelFormat::NV12f;
@@ -635,15 +734,65 @@ NSArray<AVCaptureDevice*>* findAllDeviceName() {
         }
     }
 
-    CCAP_NSLOG_E(@"ccap: No connections available");
+    reportError(ErrorCode::InitializationFailed, "No connections available");
 }
 
 - (BOOL)start {
     if (_session && _opened && ![_session isRunning]) {
+        CGSize targetResolution = _resolution;
         CCAP_NSLOG_V(@"ccap: CameraCaptureObjc start");
         [_session startRunning];
+        
+        // If the format was changed by session start, restore it
+        if (_device && _device.activeFormat && targetResolution.width > 0 && targetResolution.height > 0) {
+            CMVideoDimensions afterStart = CMVideoFormatDescriptionGetDimensions(_device.activeFormat.formatDescription);
+            if (afterStart.width != targetResolution.width || afterStart.height != targetResolution.height) {
+                CCAP_NSLOG_V(@"ccap: Session start changed format from %gx%g, restoring", targetResolution.width, targetResolution.height);
+                [self setCameraResolution:targetResolution];
+            }
+        }
     }
     return [_session isRunning];
+}
+
+- (void)setCameraResolution:(CGSize)targetResolution {
+    if (!_device) return;
+    
+    NSError* error = nil;
+    if ([_device lockForConfiguration:&error]) {
+        AVCaptureDeviceFormat* bestFormat = nil;
+        double closestDistance = 1e9;
+        
+        for (AVCaptureDeviceFormat* format in _device.formats) {
+            CMVideoDimensions dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription);
+            
+            /// If we find an exact match, use it immediately
+            if (dimensions.width == targetResolution.width && dimensions.height == targetResolution.height) {
+                bestFormat = format;
+                break;
+            }
+            
+            /// Otherwise, calculate distance for closest match
+            double distance = std::abs(dimensions.width - targetResolution.width) + std::abs(dimensions.height - targetResolution.height);
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                bestFormat = format;
+            }
+        }
+        
+        if (bestFormat) {
+            [_device setActiveFormat:bestFormat];
+            CMVideoDimensions actualDimensions = CMVideoFormatDescriptionGetDimensions(bestFormat.formatDescription);
+            CCAP_NSLOG_V(@"ccap: Restored device format to: %dx%d", actualDimensions.width, actualDimensions.height);
+            
+            // Update internal resolution tracking
+            _resolution = CGSizeMake(actualDimensions.width, actualDimensions.height);
+        }
+        
+        [_device unlockForConfiguration];
+    } else {
+        CCAP_NSLOG_W(@"ccap: Failed to lock device for format restoration: %@", error.localizedDescription);
+    }
 }
 
 - (void)stop {
@@ -693,7 +842,7 @@ NSArray<AVCaptureDevice*>* findAllDeviceName() {
     didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
            fromConnection:(AVCaptureConnection*)connection {
     if (!_provider) {
-        CCAP_NSLOG_E(@"ccap: CameraCaptureObjc captureOutput - provider is nil");
+        reportError(ErrorCode::InitializationFailed, "CameraCaptureObjc captureOutput - provider is nil");
         return;
     }
 
@@ -753,22 +902,7 @@ NSArray<AVCaptureDevice*>* findAllDeviceName() {
     bool zeroCopy = ((internalFormat & kPixelFormatYUVColorBit) && (outputFormat & kPixelFormatYUVColorBit)) ||
         (internalFormat == outputFormat && _provider->frameOrientation() == kDefaultFrameOrientation);
 
-    if (zeroCopy) {
-        newFrame->orientation = kDefaultFrameOrientation;
-        CFRetain(imageBuffer);
-        auto manager = std::make_shared<FakeFrame>([imageBuffer, newFrame]() mutable {
-            CVPixelBufferUnlockBaseAddress(imageBuffer, kCVPixelBufferLock_ReadOnly);
-            CFRelease(imageBuffer);
-            CCAP_NSLOG_V(@"ccap: recycled frame, width: %d, height: %d", (int)newFrame->width, (int)newFrame->height);
-
-            newFrame->nativeHandle = nullptr;
-            newFrame = nullptr;
-        });
-
-        auto fakeFrame = std::shared_ptr<VideoFrame>(manager, newFrame.get());
-        newFrame = fakeFrame;
-    } else /// yuv/rgb color -> rgb color
-    {
+    if (!zeroCopy) {
         newFrame->orientation = _provider->frameOrientation();
 
         if (!newFrame->allocator) {
@@ -782,7 +916,7 @@ NSArray<AVCaptureDevice*>* findAllDeviceName() {
             startConvertTime = std::chrono::steady_clock::now();
         }
 
-        inplaceConvertFrame(newFrame.get(), outputFormat, (int)(newFrame->orientation != kDefaultFrameOrientation));
+        zeroCopy = !inplaceConvertFrame(newFrame.get(), outputFormat, (int)(newFrame->orientation != kDefaultFrameOrientation));
 
         CVPixelBufferUnlockBaseAddress(imageBuffer, kCVPixelBufferLock_ReadOnly);
 
@@ -811,6 +945,22 @@ NSArray<AVCaptureDevice*>* findAllDeviceName() {
                 pixelFormatToString(_provider->getFrameProperty().cameraPixelFormat).data(),
                 (int)(newFrame->orientation != kDefaultFrameOrientation), mode, durInMs, s_allCostTime / s_frames);
         }
+    }
+
+    if (zeroCopy) {
+        newFrame->orientation = kDefaultFrameOrientation;
+        CFRetain(imageBuffer);
+        auto manager = std::make_shared<FakeFrame>([imageBuffer, newFrame]() mutable {
+            CVPixelBufferUnlockBaseAddress(imageBuffer, kCVPixelBufferLock_ReadOnly);
+            CFRelease(imageBuffer);
+            CCAP_NSLOG_V(@"ccap: recycled frame, width: %d, height: %d", (int)newFrame->width, (int)newFrame->height);
+
+            newFrame->nativeHandle = nullptr;
+            newFrame = nullptr;
+        });
+
+        auto fakeFrame = std::shared_ptr<VideoFrame>(manager, newFrame.get());
+        newFrame = fakeFrame;
     }
 
     newFrame->frameIndex = _provider->frameIndex()++;
@@ -877,7 +1027,7 @@ std::vector<std::string> ProviderApple::findDeviceNames() {
 
 bool ProviderApple::open(std::string_view deviceName) {
     if (m_imp != nil) {
-        CCAP_NSLOG_E(@"ccap: Camera is already opened");
+        reportError(ErrorCode::DeviceOpenFailed, "Camera is already opened");
         return false;
     }
 
@@ -922,7 +1072,7 @@ std::optional<DeviceInfo> ProviderApple::getDeviceInfo() const {
     }
 
     if (!deviceInfo) {
-        CCAP_NSLOG_E(@"ccap: getDeviceInfo called with no device opened");
+        reportError(ErrorCode::InitializationFailed, "getDeviceInfo called with no device opened");
     }
     return deviceInfo;
 }
@@ -938,6 +1088,7 @@ void ProviderApple::close() {
 bool ProviderApple::start() {
     if (!isOpened()) {
         CCAP_NSLOG_W(@"ccap: camera start called with no device opened");
+        reportError(ErrorCode::DeviceStartFailed, "Camera start called with no device opened");
         return false;
     }
 

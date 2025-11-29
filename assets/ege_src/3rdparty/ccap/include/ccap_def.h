@@ -4,43 +4,35 @@
  * @brief Some basic type definitions
  * @date 2025-05
  *
+ * @note For C language, use ccap_c.h instead of this header.
+ *
  */
+
+#ifndef __cplusplus
+#error "ccap_def.h is for C++ only. For C language, please use ccap_c.h instead."
+#endif
 
 #pragma once
 #ifndef CCAP_DEF_H
 #define CCAP_DEF_H
 
-#if __APPLE__
-#include <TargetConditionals.h>
-#if (defined(TARGET_OS_IOS) && TARGET_OS_IOS) || (defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
-#define CCAP_IOS 1
-#else
-#define CCAP_MACOS 1
-#endif
-
-#elif defined(__ANDROID__)
-#define CCAP_ANDROID 1
-#elif defined(WIN32) || defined(_WIN32)
-#define CCAP_WINDOWS 1
-#if defined(_MSC_VER)
-#define CCAP_WINDOWS_MSVC 1
-#endif
-#endif
-
-#if !defined(CCAP_DESKTOP) && (CCAP_WINDOWS || CCAP_MACOS)
-#define CCAP_DESKTOP 1
-#endif
+#include "ccap_config.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4251)
+#endif
+
 // ccap is short for (C)amera(CAP)ture
-namespace ccap
-{
-enum PixelFormatConstants : uint32_t
-{
+namespace ccap {
+enum PixelFormatConstants : uint32_t {
     /// `kPixelFormatRGBBit` indicates that the pixel format is RGB or RGBA.
     kPixelFormatRGBBit = 1 << 3,
     /// `kPixelFormatRGBBit` indicates that the pixel format is BGR or BGRA.
@@ -51,7 +43,7 @@ enum PixelFormatConstants : uint32_t
     kPixelFormatFullRangeBit = 1 << 17,
     kPixelFormatYUVColorFullRangeBit = kPixelFormatFullRangeBit | kPixelFormatYUVColorBit,
 
-    /// `kPixelFormatRGBColorBit` indicates that the pixel format is RGB/RGBA/BGR/BGRA. 
+    /// `kPixelFormatRGBColorBit` indicates that the pixel format is RGB/RGBA/BGR/BGRA.
     /// Which means it has RGB or RGBA color channels, and is not a YUV format.
     kPixelFormatRGBColorBit = 1 << 18,
 
@@ -69,8 +61,7 @@ enum PixelFormatConstants : uint32_t
  *       For better performance, consider using the NV12v or NV12f formats. These two formats are
  *       often referred to as YUV formats and are supported by almost all platforms.
  */
-enum class PixelFormat : uint32_t
-{
+enum class PixelFormat : uint32_t {
     Unknown = 0,
 
     /**
@@ -97,6 +88,25 @@ enum class PixelFormat : uint32_t
 
     I420f = I420 | kPixelFormatYUVColorFullRangeBit,
 
+    /**
+     * @brief YUV 4:2:2 packed format (YUYV/YUY2). 2 bytes per pixel.
+     * @note Common format for many USB cameras and video capture devices.
+     *       This is a packed format where Y, U, and V components are interleaved.
+     */
+    YUYV = 1 << 3 | kPixelFormatYUVColorBit,
+
+    /// @brief FullRange YUV 4:2:2 packed format (YUYV/YUY2)
+    YUYVf = YUYV | kPixelFormatYUVColorFullRangeBit,
+
+    /**
+     * @brief YUV 4:2:2 packed format (UYVY). 2 bytes per pixel.
+     * @note Similar to YUYV but with different component ordering.
+     */
+    UYVY = 1 << 4 | kPixelFormatYUVColorBit,
+
+    /// @brief FullRange YUV 4:2:2 packed format (UYVY)
+    UYVYf = UYVY | kPixelFormatYUVColorFullRangeBit,
+
     /// @brief Not commonly used, likely unsupported, may fall back to BGR24 (Windows) or BGRA32 (MacOS)
     RGB24 = kPixelFormatRGBBit | kPixelFormatRGBColorBit, /// 3 bytes per pixel
 
@@ -116,8 +126,7 @@ enum class PixelFormat : uint32_t
     BGRA32 = BGR24 | kPixelFormatRGBAColorBit,
 };
 
-enum class FrameOrientation
-{
+enum class FrameOrientation {
     /**
      * @brief The frame is laid out in a top-to-bottom format.
      *     The first row of data corresponds to the first row of the image.
@@ -140,18 +149,15 @@ enum class FrameOrientation
 };
 
 /// check if the pixel format `lhs` includes all bits of the pixel format `rhs`.
-inline bool pixelFormatInclude(PixelFormat lhs, PixelFormatConstants rhs)
-{
+inline bool pixelFormatInclude(PixelFormat lhs, PixelFormatConstants rhs) {
     return (static_cast<uint32_t>(lhs) & rhs) == rhs;
 }
 
-inline bool pixelFormatInclude(PixelFormat lhs, PixelFormat rhs)
-{
+inline bool pixelFormatInclude(PixelFormat lhs, PixelFormat rhs) {
     return (static_cast<uint32_t>(lhs) & static_cast<uint32_t>(rhs)) == static_cast<uint32_t>(rhs);
 }
 
-enum class PropertyName
-{
+enum class PropertyName {
     /**
      * @brief The width of the frame.
      * @note When used to set the capture resolution, the closest available resolution will be chosen.
@@ -202,11 +208,74 @@ enum class PropertyName
 };
 
 /**
+ * @brief Error codes for camera capture operations
+ */
+enum class ErrorCode {
+    /// No error occurred
+    None = 0,
+
+    /// No camera device found or device discovery failed
+    NoDeviceFound = 0x1001,
+
+    /// Invalid device name or device index
+    InvalidDevice = 0x1002,
+
+    /// Camera device open failed
+    DeviceOpenFailed = 0x1003,
+
+    /// Camera start failed
+    DeviceStartFailed = 0x1004,
+
+    /// Camera stop failed
+    DeviceStopFailed = 0x1005,
+
+    /// Initialization failed
+    InitializationFailed = 0x1006,
+
+    /// Requested resolution is not supported
+    UnsupportedResolution = 0x2001,
+
+    /// Requested pixel format is not supported
+    UnsupportedPixelFormat = 0x2002,
+
+    /// Frame rate setting failed
+    FrameRateSetFailed = 0x2003,
+
+    /// Property setting failed
+    PropertySetFailed = 0x2004,
+
+    /// Frame capture timeout
+    FrameCaptureTimeout = 0x3001,
+
+    /// Frame capture failed
+    FrameCaptureFailed = 0x3002,
+
+    /// Memory allocation failed
+    MemoryAllocationFailed = 0x4001,
+
+    /// Unknown or internal error
+    InternalError = 0x9999,
+};
+
+/**
+ * @brief Error callback function type for C++ interface
+ * @param errorCode The error code that occurred
+ * @param errorDescription English description of the error
+ */
+using ErrorCallback = std::function<void(ErrorCode errorCode, std::string_view errorDescription)>;
+
+/**
+ * @brief Convert error code to English string description
+ * @param errorCode The error code to convert
+ * @return English description of the error
+ */
+std::string_view errorCodeToString(ErrorCode errorCode);
+
+/**
  * @brief Interface for memory allocation, primarily used to allocate the `data` field in `ccap::Frame`.
  * @note If you want to implement your own Allocator, you need to ensure that the allocated memory is 32-byte aligned to enable SIMD instruction set acceleration.
  */
-class Allocator
-{
+class CCAP_EXPORT Allocator {
 public:
     virtual ~Allocator() = 0;
 
@@ -222,8 +291,7 @@ public:
     virtual size_t size() = 0;
 };
 
-struct VideoFrame
-{
+struct CCAP_EXPORT VideoFrame {
     VideoFrame();
     ~VideoFrame();
     VideoFrame(const VideoFrame&) = delete;
@@ -278,15 +346,30 @@ struct VideoFrame
      * @note Currently defined as follows:
      *     - Windows: When the backend is DirectShow, the actual type of nativeHandle is `IMediaSample*`
      *     - macOS/iOS: The actual type of nativeHandle is `CMSampleBufferRef`
+     *     - Linux: The actual type is uint32_t, stands for `v4l2_buffer::index`.
      */
     void* nativeHandle = nullptr; ///< Native handle for the frame, used for platform-specific operations
+
+    /**
+     * @brief When (allocator == nullptr || data[0] != allocator->data()), the data is stored in a hardware buffer.
+     *    If you hold multiple VideoFrame objects for a long time, it may prevent the camera hardware buffer from being reused,
+     *    affecting performance or causing the camera to stop working.
+     *    Therefore, if you need to hold a VideoFrame object for a long time, you should call the `detach()` method to release nativeHandle.
+     *    If data[0] == allocator->data(), calling `detach()` has no extra cost.
+     *    If data[0] != allocator->data(), calling `detach()` will copy the data into the allocator.
+     *    After calling detach, nativeHandle will be set to nullptr, and data[0] will point to allocator->data().
+     *
+     * @note Best practice: If you need to pass a std::shared_ptr<VideoFrame> object across threads or hold it across frames,
+     *    you should call `detach()` immediately after obtaining the std::shared_ptr<VideoFrame> object.
+     *
+     */
+    void detach();
 };
 
 /**
  * @brief Device information structure. This structure contains some information about the device.
  */
-struct DeviceInfo
-{
+struct CCAP_EXPORT DeviceInfo {
     std::string deviceName;
 
     /**
@@ -294,8 +377,7 @@ struct DeviceInfo
      */
     std::vector<PixelFormat> supportedPixelFormats;
 
-    struct Resolution
-    {
+    struct Resolution {
         uint32_t width;
         uint32_t height;
     };
@@ -307,5 +389,9 @@ struct DeviceInfo
 };
 
 } // namespace ccap
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 #endif

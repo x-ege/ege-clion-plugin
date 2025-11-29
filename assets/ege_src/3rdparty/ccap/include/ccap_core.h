@@ -3,8 +3,14 @@
  * @author wysaid (this@wysaid.org)
  * @brief Header file for CameraCapture class.
  * @date 2025-04
+ * 
+ * @note For C language, use ccap_c.h instead of this header.
  *
  */
+
+#ifndef __cplusplus
+#error "ccap_core.h is for C++ only. For C language, please use ccap_c.h instead."
+#endif
 
 #pragma once
 #ifndef CCAP_H_
@@ -20,11 +26,9 @@
 #include <vector>
 
 // ccap is short for (C)amera(CAP)ture
-namespace ccap
-{
+namespace ccap {
 /// A default allocator
-class DefaultAllocator : public Allocator
-{
+class CCAP_EXPORT DefaultAllocator : public Allocator {
 public:
     ~DefaultAllocator() override;
     void resize(size_t size) override;
@@ -36,8 +40,7 @@ private:
     size_t m_size = 0;
 };
 
-enum
-{
+enum {
     /// @brief The default maximum number of frames that can be cached.
     DEFAULT_MAX_CACHE_FRAME_SIZE = 15,
 
@@ -53,8 +56,7 @@ class ProviderImp;
  * @note This class is not thread-safe. It is recommended to use it in a single thread.
  *       If you need to use it in multiple threads, consider using a mutex or other synchronization methods.
  */
-class Provider final
-{
+class CCAP_EXPORT Provider final {
 public:
     /// @brief Default constructor. The camera device is not opened yet.
     ///        You can use the `open` method to open a camera device later.
@@ -149,8 +151,7 @@ public:
     bool set(PropertyName prop, double value);
 
     template <class T>
-    bool set(PropertyName prop, T value)
-    {
+    bool set(PropertyName prop, T value) {
         return set(prop, static_cast<double>(value));
     }
 
@@ -215,6 +216,8 @@ public:
      */
     void setMaxCacheFrameSize(uint32_t size);
 
+
+
     // ↓ This part is not relevant to the user ↓
     Provider(Provider&&) = default;
     Provider& operator=(Provider&&) = default;
@@ -223,6 +226,23 @@ public:
 private:
     ProviderImp* m_imp;
 };
+
+/**
+ * @brief Sets the error callback function to handle errors from all camera operations.
+ * @param callback The callback function to be invoked when an error occurs.
+ *     The callback receives an error code and English description of the error.
+ *     Pass nullptr to remove the error callback.
+ * @note The callback is executed in the same thread where the error occurs.
+ *       Keep the callback implementation lightweight to avoid blocking camera operations.
+ *       This callback will be used by all Provider instances.
+ */
+CCAP_EXPORT void setErrorCallback(ErrorCallback callback);
+
+/**
+ * @brief Gets the current error callback function.
+ * @return The current error callback, or nullptr if none is set.
+ */
+CCAP_EXPORT ErrorCallback getErrorCallback();
 
 } // namespace ccap
 
