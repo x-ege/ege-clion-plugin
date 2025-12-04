@@ -204,6 +204,24 @@ cd ege-jetbrains-plugin
 
 生成的插件位于 `build/distributions/` 目录。
 
+### 更新 EGE 库和源码
+
+项目提供了两个脚本用于更新内置的 EGE 库和源码：
+
+```bash
+# 更新预编译库（从 Jenkins 下载最新版本）
+./update_ege_lib.sh
+
+# 更新源代码（从本地 xege 仓库）
+./update_ege_src.sh /path/to/xege
+
+# 更新预编译库时跳过下载（使用已下载的文件）
+./update_ege_lib.sh --skip-download
+
+# 强制重新下载预编译库
+./update_ege_lib.sh --force-download
+```
+
 ### 环境要求
 
 - **JDK**: 17 或更高版本
