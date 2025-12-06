@@ -1,0 +1,120 @@
+name: Auto Release
+
+on:
+  push:
+    branches:
+      - master
+    tags-ignore:
+      - '**'  # 避免 tag push 触发这个 workflow
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整历史以便比较版本变化
+
+      - name: Get current plugin version
+        id: current_version
+        run: |
+          CURRENT_VERSION=$(grep "^pluginVersion=" gradle.properties | cut -d'=' -f2)
+          echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "当前版本: $CURRENT_VERSION"
+
+      - name: Get previous plugin version
+        id: previous_version
+        run: |
+          # 获取上一次提交的版本号
+          git checkout HEAD~1 -- gradle.properties 2>/dev/null || echo "No previous commit"
+          if [ -f gradle.properties ]; then
+            PREVIOUS_VERSION=$(grep "^pluginVersion=" gradle.properties | cut -d'=' -f2)
+          else
+            PREVIOUS_VERSION="none"
+          fi
+          echo "version=$PREVIOUS_VERSION" >> $GITHUB_OUTPUT
+          echo "上一个版本: $PREVIOUS_VERSION"
+          
+          # 恢复当前版本的 gradle.properties
+          git checkout HEAD -- gradle.properties
+
+      - name: Check version change
+        id: version_changed
+        run: |
+          CURRENT="${{ steps.current_version.outputs.version }}"
+          PREVIOUS="${{ steps.previous_version.outputs.version }}"
+          
+          if [ "$CURRENT" = "$PREVIOUS" ]; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "✓ 版本号未改变 ($CURRENT)，跳过发布流程"
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "✓ 检测到版本号变化: $PREVIOUS -> $CURRENT"
+          fi
+
+      - name: Check if tag exists
+        if: steps.version_changed.outputs.changed == 'true'
+        id: check_tag
+        run: |
+          VERSION="${{ steps.current_version.outputs.version }}"
+          
+          # 检查本地和远程是否存在该 tag
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "❌ Tag $VERSION 已存在于本地"
+            exit 1
+          fi
+          
+          # 检查远程是否存在该 tag
+          if git ls-remote --tags origin | grep -q "refs/tags/$VERSION$"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "❌ Tag $VERSION 已存在于远程仓库"
+            exit 1
+          fi
+          
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "✓ Tag $VERSION 不存在，可以创建"
+
+      - name: Create and push tag
+        if: steps.version_changed.outputs.changed == 'true' && steps.check_tag.outputs.exists == 'false'
+        run: |
+          VERSION="${{ steps.current_version.outputs.version }}"
+          
+          # 配置 git 用户信息
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 创建带注释的 tag
+          git tag -a "$VERSION" -m "Release version $VERSION"
+          
+          # 推送 tag 到远程仓库
+          git push origin "$VERSION"
+          
+          echo "✓ 已创建并推送 tag: $VERSION"
+          echo "🚀 Release workflow 将被自动触发"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## 自动发布流程总结" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- 当前版本: ${{ steps.current_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 上一个版本: ${{ steps.previous_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 版本已改变: ${{ steps.version_changed.outputs.changed }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.version_changed.outputs.changed }}" = "true" ]; then
+            if [ "${{ steps.check_tag.outputs.exists }}" = "false" ]; then
+              echo "- 状态: ✅ 已创建 tag ${{ steps.current_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "Release workflow 将自动触发并发布插件到 GitHub Releases" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- 状态: ❌ Tag 已存在" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "- 状态: ⏭️ 版本未改变，跳过发布" >> $GITHUB_STEP_SUMMARY
+          fi
