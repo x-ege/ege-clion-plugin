@@ -1,6 +1,7 @@
 # XEGE Creator
 
 [![CI](https://github.com/x-ege/ege-clion-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/x-ege/ege-clion-plugin/actions/workflows/ci.yml)
+[![Auto Release](https://github.com/x-ege/ege-clion-plugin/actions/workflows/auto-release.yml/badge.svg)](https://github.com/x-ege/ege-clion-plugin/actions/workflows/auto-release.yml)
 [![Release](https://github.com/x-ege/ege-clion-plugin/actions/workflows/release.yml/badge.svg)](https://github.com/x-ege/ege-clion-plugin/actions/workflows/release.yml)
 [![JetBrains Plugin](https://img.shields.io/jetbrains/plugin/v/28785-xege-creator.svg)](https://plugins.jetbrains.com/plugin/28785-xege-creator)
 [![Downloads](https://img.shields.io/jetbrains/plugin/d/28785-xege-creator.svg)](https://plugins.jetbrains.com/plugin/28785-xege-creator)
@@ -159,8 +160,20 @@ cd ege-jetbrains-plugin
 本项目使用 GitHub Actions 进行持续集成和自动发布：
 
 - **CI Workflow**: 每次推送到 `master` 分支或创建 Pull Request 时，自动运行测试和构建
+- **Auto Release Workflow**: 当 `master` 分支更新（PR 合并或直接推送）时，自动检测 `gradle.properties` 中的 `pluginVersion` 是否改变，如果改变则自动创建对应的版本 tag
 - **Release Workflow**: 推送版本 tag（如 `1.0.1`）时，自动构建并发布到 GitHub Releases
 - **Version Check Workflow**: 每天自动检查 CLion 新版本，确保插件兼容性
+
+### 📦 发布流程
+
+插件采用自动化发布流程：
+
+1. **更新版本号**：在 `gradle.properties` 中修改 `pluginVersion`（如从 `1.0.0` 改为 `1.1.0`）
+2. **提交并推送**：提交更改并推送到 `master` 分支（或通过 PR 合并）
+3. **自动创建 Tag**：Auto Release workflow 检测到版本变化后，自动创建对应的 tag
+4. **自动发布**：Release workflow 被 tag 触发，自动构建并发布插件到 GitHub Releases
+
+注意：如果目标版本的 tag 已存在，Auto Release workflow 会报错，需要选择新的版本号。
 
 ### 🔧 版本管理任务
 
