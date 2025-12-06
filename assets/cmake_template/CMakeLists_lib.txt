@@ -31,64 +31,62 @@ target_include_directories(${MY_TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 
 # 设置静态库搜索路径
 if(MSVC)
-    # 设置 MSVC 编译选项, 当版本大于 vs2019 时, 使用 c++17 标准.
+    # 设置 MSVC 编译选项, 所有支持的版本 (vs2017-vs2026) 都使用 c++17 标准
+    # VS 2017 15.0+ 已完全支持 C++17, 参见 Microsoft 官方文档:
+    # https://learn.microsoft.com/en-us/cpp/overview/visual-cpp-language-conformance
     set(CPP_COMPILE_OPTIONS "/std:c++17")
 
+    # 用于存储备选版本列表的变量 (从最优选到最不优选)
+    set(osLibDirCandidates "")
+    set(osLibDirFound FALSE)
+
     if(MSVC_VERSION GREATER_EQUAL 1950)
-        # vs2026 以上, 静态库是兼容的.
+        # vs2026 以上, 尝试从 vs2026 -> vs2022 -> vs2019 顺序 fallback
+        # 根据 MSVC 文档, 新版本的编译器产生的库文件在 ABI 级别是兼容的.
         if(CMAKE_CL_64)
-            set(osLibDir "vs2026/x64")
+            list(APPEND osLibDirCandidates "vs2026/x64" "vs2022/x64" "vs2019/x64")
         else()
-            set(osLibDir "vs2026/x86")
+            list(APPEND osLibDirCandidates "vs2026/x86" "vs2022/x86" "vs2019/x86")
         endif()
     elseif(MSVC_VERSION GREATER_EQUAL 1930)
-        # vs2022 以上, 静态库是兼容的.
+        # vs2022, 尝试从 vs2022 -> vs2019 顺序 fallback
         if(CMAKE_CL_64)
-            set(osLibDir "vs2022/x64")
+            list(APPEND osLibDirCandidates "vs2022/x64" "vs2019/x64")
         else()
-            set(osLibDir "vs2022/x86")
+            list(APPEND osLibDirCandidates "vs2022/x86" "vs2019/x86")
         endif()
     elseif(MSVC_VERSION GREATER_EQUAL 1920)
-        # vs2019 以上, 静态库是兼容的.
+        # vs2019, 可以 fallback 到 vs2019 (仅作为候选)
         if(CMAKE_CL_64)
-            set(osLibDir "vs2019/x64")
+            list(APPEND osLibDirCandidates "vs2019/x64")
         else()
-            set(osLibDir "vs2019/x86")
+            list(APPEND osLibDirCandidates "vs2019/x86")
         endif()
     elseif(MSVC_VERSION GREATER_EQUAL 1910)
-        # vs2017
+        # vs2017 从 15.0 版本开始支持 C++17, 参见 Microsoft 官方文档
+        # https://learn.microsoft.com/en-us/cpp/overview/visual-cpp-language-conformance
         if(CMAKE_CL_64)
-            set(osLibDir "vs2017/x64")
+            list(APPEND osLibDirCandidates "vs2017/x64")
         else()
-            set(osLibDir "vs2017/x86")
+            list(APPEND osLibDirCandidates "vs2017/x86")
         endif()
-
-        # 设置 MSVC 编译选项, 当版本为 vs2017 时, 使用 c++14 标准.
-        set(CPP_COMPILE_OPTIONS "/std:c++14")
-    elseif(MSVC_VERSION GREATER_EQUAL 1900)
-        # vs2015
-        if(CMAKE_CL_64)
-            set(osLibDir "vs2015/amd64")
-        else()
-            set(osLibDir "vs2015")
-        endif()
-
-        # 设置 MSVC 编译选项, 当版本为 vs2015 时, 使用 c++14 标准.
-        set(CPP_COMPILE_OPTIONS "/std:c++14")
-    elseif(MSVC_VERSION GREATER_EQUAL 1600)
-        if(MSVC_VERSION GREATER_EQUAL 1700)
-            message(WARNING "You are using vs2012/vs2013, which is not tested, please use vs2010, vs2015 or later version of MSVC compiler.")
-        endif()
-
-        # vs2010
-        if(CMAKE_CL_64)
-            set(osLibDir "vs2010/amd64")
-        else()
-            set(osLibDir "vs2010")
-        endif()
-
     else()
         message(FATAL_ERROR "你的 MSVC 版本太老了, 请使用 vs2015 或更新版本的 MSVC 编译器. 与时俱进吧, 不要一直使用十年前的编译器.")
+    endif()
+
+    # 遍历备选库路径, 查找第一个存在的目录
+    foreach(libDirCandidate IN LISTS osLibDirCandidates)
+        set(fullLibPath "${CMAKE_CURRENT_SOURCE_DIR}/ege/lib/${libDirCandidate}")
+        if(EXISTS "${fullLibPath}")
+            set(osLibDir "${libDirCandidate}")
+            set(osLibDirFound TRUE)
+            message(STATUS "EGE Library: Found compatible library at ${libDirCandidate}")
+            break()
+        endif()
+    endforeach()
+
+    if(NOT osLibDirFound)
+        message(FATAL_ERROR "EGE Library: Could not find compatible library directory. Searched: ${osLibDirCandidates}")
     endif()
 
     target_compile_options(${MY_TARGET_NAME} PRIVATE
@@ -120,6 +118,6 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
 endif()
 
 if(DEFINED osLibDir)
-    message(STATUS "osLibDir: ${osLibDir}")
+    message(STATUS "EGE Library: Link directories set to ${osLibDir}")
     target_link_directories(${MY_TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ege/lib/${osLibDir})
 endif()
