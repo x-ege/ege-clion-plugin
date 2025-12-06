@@ -84,15 +84,12 @@ declare -a COPY_MAPPING_SRC=(
 
     lib/macOS
     lib/mingw-w64-debian
-    lib/mingw64/libgraphics.a
+    lib/redpanda/libgraphics.a
 
     lib/vs2026
     lib/vs2022
     lib/vs2019
     lib/vs2017
-
-    lib/vs2010/x86
-    lib/vs2010/x64
 )
 
 declare -a COPY_MAPPING_DST=(
@@ -106,9 +103,6 @@ declare -a COPY_MAPPING_DST=(
     lib/vs2022
     lib/vs2019
     lib/vs2017
-
-    lib/vs2010
-    lib/vs2010/amd64
 )
 
 # 这里确保一下 SRC 和 DST 长度一致
@@ -140,15 +134,20 @@ function performSync() {
         }
     fi
 
-    if [[ -d "$dst" && "${dst: -1}" != "/" ]]; then
-        src="${src}/"
-        dst="${dst}/"
+    # Remove destination if it exists to avoid nested directory issues
+    if [[ -e "$dst" ]]; then
+        rm -rf "$dst"
     fi
 
     # Prefer rsync when available, otherwise fallback to cp
     if command -v rsync >/dev/null 2>&1; then
         # Use rsync; preserve attributes.
-        rsync -a "$src" "$dst"
+        # When src is a directory, rsync copies its contents to dst
+        if [[ -d "$src" ]]; then
+            rsync -a "$src/" "$dst/"
+        else
+            rsync -a "$src" "$dst"
+        fi
     else
         if [[ -d "$src" ]]; then
             cp -r "$src" "$dst"
