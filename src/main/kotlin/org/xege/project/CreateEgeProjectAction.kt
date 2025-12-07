@@ -135,9 +135,16 @@ class CreateEgeProjectAction : AnAction() {
 
                     // 在 EDT 线程上显示成功消息
                     ApplicationManager.getApplication().invokeLater {
-                        val productName = com.intellij.openapi.application.ApplicationNamesInfo.getInstance().productName
+                        // 检查是否为 CLion 或基于 CLion 的 IDE (通过检查 C++ 模块类型类是否存在)
+                        val isCLion = try {
+                            Class.forName("com.jetbrains.cidr.cpp.CPPModuleType")
+                            true
+                        } catch (e: ClassNotFoundException) {
+                            false
+                        }
+
                         // 如果是 CLion，询问是否打开项目
-                        if (productName.equals("CLion", ignoreCase = true)) {
+                        if (isCLion) {
                             val result = Messages.showYesNoDialog(
                                 null,
                                 XegeBundle.message("create.success.open.message", projectPath),
@@ -149,14 +156,11 @@ class CreateEgeProjectAction : AnAction() {
                                 // 尝试打开项目
                                 try {
                                     // 使用 ProjectUtil 打开项目
-                                    // 注意：ProjectUtil 在不同版本中位置可能不同，这里使用反射或尝试直接调用
-                                    // 为了兼容性，我们尝试使用 com.intellij.ide.impl.ProjectUtil
-                                    val projectUtilClass = Class.forName("com.intellij.ide.impl.ProjectUtil")
-                                    val openMethod = projectUtilClass.getMethod("openOrImport", String::class.java, com.intellij.openapi.project.Project::class.java, Boolean::class.javaPrimitiveType)
-                                    openMethod.invoke(null, projectPath, null, false)
+                                    // 直接调用 API 而不是反射，以提高稳定性
+                                    com.intellij.ide.impl.ProjectUtil.openOrImport(projectPath, null, false)
                                 } catch (e: Exception) {
-                                    logger.warn("Failed to open project using reflection, trying alternative method", e)
-                                    // 如果反射失败，回退到只显示消息
+                                    logger.warn("Failed to open project", e)
+                                    // 如果失败，回退到只显示消息
                                     Messages.showInfoMessage(
                                         XegeBundle.message("create.success.message", projectPath),
                                         XegeBundle.message("create.success.title")
