@@ -111,6 +111,11 @@ jobs:
           prerelease: false
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Publish Plugin to JetBrains Marketplace
+        env:
+          PUBLISH_TOKEN: ${{ secrets.JETBRAINS_TOKEN }}
+        run: ./gradlew publishPlugin
+
       - name: Release summary
         run: |
           echo "🎉 Release ${{ steps.extract_version.outputs.tag_version }} 创建成功！"

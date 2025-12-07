@@ -40,6 +40,9 @@ tasks {
     buildPlugin {
         dependsOn("test")
     }
+    publishPlugin {
+        token.set(System.getenv("PUBLISH_TOKEN"))
+    }
     runIde {
         // 使用默认的 IDEA 实例进行调试
     }
