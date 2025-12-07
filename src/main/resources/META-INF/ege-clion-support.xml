@@ -1,0 +1,6 @@
+<idea-plugin>
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- 注册 CLion 项目生成器 -->
+        <directoryProjectGenerator implementation="org.xege.project.EgeProjectGenerator"/>
+    </extensions>
+</idea-plugin>

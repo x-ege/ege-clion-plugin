@@ -17,17 +17,15 @@
     <!-- 更新日志由 Gradle 构建时从 CHANGELOG.md 注入 -->
     
     <depends>com.intellij.modules.platform</depends>
-    <!-- CLion C/C++ 支持 - 必需依赖 -->
-    <depends>com.intellij.clion</depends>
-    <!-- CLion CMake 支持 - 提供 CLionProjectGenerator -->
-    <depends>com.intellij.modules.clion.cmake</depends>
+    
+    <!-- CLion 支持 (可选，兼容所有 IDE) -->
+    <depends optional="true" config-file="ege-clion-support.xml">com.intellij.clion</depends>
+    <!-- CLion CMake 支持 (新版本需要显式依赖) -->
+    <depends optional="true" config-file="ege-clion-support.xml">com.intellij.modules.clion.cmake</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <!-- 注册通知组 - 使用新的格式 -->
         <notificationGroup id="Xege Plugin Notifications" displayType="BALLOON" isLogByDefault="true"/>
-        
-        <!-- 注册 CLion 项目生成器 - 使用正确的扩展点 -->
-        <directoryProjectGenerator implementation="org.xege.project.EgeProjectGenerator"/>
     </extensions>
 
     <actions>
