@@ -20,8 +20,6 @@
     
     <!-- CLion 支持 (可选，兼容所有 IDE) -->
     <depends optional="true" config-file="ege-clion-support.xml">com.intellij.clion</depends>
-    <!-- CLion CMake 支持 (新版本需要显式依赖，但不需要重复加载配置文件) -->
-    <depends optional="true">com.intellij.modules.clion.cmake</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <!-- 注册通知组 - 使用新的格式 -->
