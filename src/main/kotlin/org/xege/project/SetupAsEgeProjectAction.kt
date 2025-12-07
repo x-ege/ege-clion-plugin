@@ -94,11 +94,11 @@ class SetupAsEgeProjectAction : AnAction() {
             return
         }
         
-        val useSourceCode = dialog.useSourceCode
-        logger.info("Use source code option: $useSourceCode")
+        val settings = dialog.settings
+        logger.info("Project settings: useSourceCode=${settings.useSourceCode}, demo=${settings.demoOption}")
         
         // 初始化项目
-        initializeEgeProject(project, projectDir, useSourceCode)
+        initializeEgeProject(project, projectDir, settings)
     }
     
     override fun update(e: AnActionEvent) {
@@ -110,10 +110,10 @@ class SetupAsEgeProjectAction : AnAction() {
      * 项目设置选项对话框
      */
     private class ProjectSetupOptionsDialog(project: Project?) : DialogWrapper(project) {
-        private val useSourceCheckBox = JCheckBox(XegeBundle.message("options.checkbox.use.source"), false)
+        private val peer = EgeProjectGeneratorPeer()
         
-        val useSourceCode: Boolean
-            get() = useSourceCheckBox.isSelected
+        val settings: EgeProjectSettings
+            get() = peer.settings
         
         init {
             title = XegeBundle.message("setup.options.dialog.title")
@@ -121,30 +121,14 @@ class SetupAsEgeProjectAction : AnAction() {
         }
         
         override fun createCenterPanel(): JComponent {
-            val panel = JPanel(BorderLayout())
-            
-            // 创建选项面板
-            val optionsPanel = JPanel()
-            optionsPanel.layout = BoxLayout(optionsPanel, BoxLayout.Y_AXIS)
-            optionsPanel.border = BorderFactory.createEmptyBorder(10, 10, 10, 10)
-            
-            // 添加说明标签
-            val descriptionLabel = JLabel(XegeBundle.message("options.label.title"))
-            optionsPanel.add(descriptionLabel)
-            optionsPanel.add(Box.createVerticalStrut(15))
-            
-            // 添加复选框
-            optionsPanel.add(useSourceCheckBox)
-            
-            panel.add(optionsPanel, BorderLayout.CENTER)
-            return panel
+            return peer.component
         }
     }
     
     /**
      * 初始化 EGE 项目
      */
-    private fun initializeEgeProject(project: Project, projectDir: File, useSourceCode: Boolean) {
+    private fun initializeEgeProject(project: Project, projectDir: File, settings: EgeProjectSettings) {
         ProgressManager.getInstance().run(object : Task.Backgroundable(
             project, 
             XegeBundle.message("setup.task.title"), 
@@ -159,16 +143,16 @@ class SetupAsEgeProjectAction : AnAction() {
                     // 复制 CMake 模板文件
                     indicator.fraction = 0.2
                     indicator.text = XegeBundle.message("setup.task.cmake")
-                    ResourceCopyHelper.copyCMakeTemplateFiles(projectDir, useSourceCode)
+                    ResourceCopyHelper.copyCMakeTemplateFiles(projectDir, settings.useSourceCode, settings.demoOption.fileName)
                     
                     // 复制 EGE 库文件
                     indicator.fraction = 0.5
-                    indicator.text = if (useSourceCode) {
+                    indicator.text = if (settings.useSourceCode) {
                         XegeBundle.message("setup.task.source")
                     } else {
                         XegeBundle.message("setup.task.library")
                     }
-                    ResourceCopyHelper.copyEgeLibrary(projectDir, useSourceCode, indicator)
+                    ResourceCopyHelper.copyEgeLibrary(projectDir, settings.useSourceCode, indicator)
                     
                     indicator.fraction = 0.9
                     indicator.text = XegeBundle.message("setup.task.finalizing")
@@ -184,7 +168,7 @@ class SetupAsEgeProjectAction : AnAction() {
                     
                     // 在 EDT 线程上显示成功消息
                     ApplicationManager.getApplication().invokeLater {
-                        val typeText = if (useSourceCode) {
+                        val typeText = if (settings.useSourceCode) {
                             XegeBundle.message("setup.success.source")
                         } else {
                             XegeBundle.message("setup.success.library")

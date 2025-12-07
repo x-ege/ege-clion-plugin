@@ -74,21 +74,21 @@ class CreateEgeProjectAction : AnAction() {
             return
         }
 
-        val useSourceCode = dialog.useSourceCode
-        logger.info("Use source code option: $useSourceCode")
+        val settings = dialog.settings
+        logger.info("Project settings: useSourceCode=${settings.useSourceCode}, demo=${settings.demoOption}")
 
         // 创建项目
-        createEgeProject(projectPath, useSourceCode)
+        createEgeProject(projectPath, settings)
     }
 
     /**
      * 项目选项对话框
      */
     private class ProjectOptionsDialog(project: com.intellij.openapi.project.Project?) : DialogWrapper(project) {
-        private val useSourceCheckBox = JCheckBox(XegeBundle.message("options.checkbox.use.source"), false)
+        private val peer = EgeProjectGeneratorPeer()
 
-        val useSourceCode: Boolean
-            get() = useSourceCheckBox.isSelected
+        val settings: EgeProjectSettings
+            get() = peer.settings
 
         init {
             title = XegeBundle.message("create.options.dialog.title")
@@ -96,27 +96,11 @@ class CreateEgeProjectAction : AnAction() {
         }
 
         override fun createCenterPanel(): JComponent {
-            val panel = JPanel(BorderLayout())
-
-            // 创建选项面板
-            val optionsPanel = JPanel()
-            optionsPanel.layout = javax.swing.BoxLayout(optionsPanel, javax.swing.BoxLayout.Y_AXIS)
-            optionsPanel.border = javax.swing.BorderFactory.createEmptyBorder(10, 10, 10, 10)
-
-            // 添加说明标签
-            val descriptionLabel = javax.swing.JLabel(XegeBundle.message("options.label.title"))
-            optionsPanel.add(descriptionLabel)
-            optionsPanel.add(javax.swing.Box.createVerticalStrut(15))
-
-            // 添加复选框
-            optionsPanel.add(useSourceCheckBox)
-
-            panel.add(optionsPanel, BorderLayout.CENTER)
-            return panel
+            return peer.component
         }
     }
 
-    private fun createEgeProject(projectPath: String, useSourceCode: Boolean) {
+    private fun createEgeProject(projectPath: String, settings: EgeProjectSettings) {
         ProgressManager.getInstance().run(object : Task.Backgroundable(null, XegeBundle.message("create.task.title"), false) {
             override fun run(indicator: ProgressIndicator) {
                 indicator.isIndeterminate = false
@@ -127,18 +111,15 @@ class CreateEgeProjectAction : AnAction() {
                     val targetDir = File(projectPath)
                     targetDir.mkdirs()
 
-                    // 使用 EgeProjectGenerator 中的复制逻辑
-                    val generator = EgeProjectGenerator()
-
                     // 复制 CMake 模板文件
                     indicator.fraction = 0.2
                     indicator.text = XegeBundle.message("create.task.cmake")
-                    ResourceCopyHelper.copyCMakeTemplateFiles(targetDir, useSourceCode)
+                    ResourceCopyHelper.copyCMakeTemplateFiles(targetDir, settings.useSourceCode, settings.demoOption.fileName)
 
                     // 复制 EGE 库文件
                     indicator.fraction = 0.5
                     indicator.text = XegeBundle.message("create.task.library")
-                    ResourceCopyHelper.copyEgeLibrary(targetDir, useSourceCode, indicator)
+                    ResourceCopyHelper.copyEgeLibrary(targetDir, settings.useSourceCode, indicator)
 
                     indicator.fraction = 0.9
                     indicator.text = XegeBundle.message("create.task.finalizing")
