@@ -1,4 +1,7 @@
 <idea-plugin>
+    <!-- CLion CMake 支持 (新版本需要显式依赖) -->
+    <depends optional="true">com.intellij.modules.clion.cmake</depends>
+
     <extensions defaultExtensionNs="com.intellij">
         <!-- 注册 CLion 项目生成器 -->
         <directoryProjectGenerator implementation="org.xege.project.EgeProjectGenerator"/>
