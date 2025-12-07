@@ -51,8 +51,8 @@ fi
 
 echo "检测到版本号: $VERSION"
 
-# 定义 Tag 名称，这里默认使用 v 前缀，例如 v1.1.2
-TAG_NAME="v$VERSION"
+# 定义 Tag 名称，不使用 v 前缀，例如 1.1.2
+TAG_NAME="$VERSION"
 
 # 4. 检查 tag 是否存在
 if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
