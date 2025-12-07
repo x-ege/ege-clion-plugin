@@ -135,10 +135,40 @@ class CreateEgeProjectAction : AnAction() {
 
                     // 在 EDT 线程上显示成功消息
                     ApplicationManager.getApplication().invokeLater {
-                        Messages.showInfoMessage(
-                            XegeBundle.message("create.success.message", projectPath),
-                            XegeBundle.message("create.success.title")
-                        )
+                        val productName = com.intellij.openapi.application.ApplicationNamesInfo.getInstance().productName
+                        // 如果是 CLion，询问是否打开项目
+                        if (productName.equals("CLion", ignoreCase = true)) {
+                            val result = Messages.showYesNoDialog(
+                                null,
+                                XegeBundle.message("create.success.open.message", projectPath),
+                                XegeBundle.message("create.success.open.title"),
+                                Messages.getQuestionIcon()
+                            )
+                            
+                            if (result == Messages.YES) {
+                                // 尝试打开项目
+                                try {
+                                    // 使用 ProjectUtil 打开项目
+                                    // 注意：ProjectUtil 在不同版本中位置可能不同，这里使用反射或尝试直接调用
+                                    // 为了兼容性，我们尝试使用 com.intellij.ide.impl.ProjectUtil
+                                    val projectUtilClass = Class.forName("com.intellij.ide.impl.ProjectUtil")
+                                    val openMethod = projectUtilClass.getMethod("openOrImport", String::class.java, com.intellij.openapi.project.Project::class.java, Boolean::class.javaPrimitiveType)
+                                    openMethod.invoke(null, projectPath, null, false)
+                                } catch (e: Exception) {
+                                    logger.warn("Failed to open project using reflection, trying alternative method", e)
+                                    // 如果反射失败，回退到只显示消息
+                                    Messages.showInfoMessage(
+                                        XegeBundle.message("create.success.message", projectPath),
+                                        XegeBundle.message("create.success.title")
+                                    )
+                                }
+                            }
+                        } else {
+                            Messages.showInfoMessage(
+                                XegeBundle.message("create.success.message", projectPath),
+                                XegeBundle.message("create.success.title")
+                            )
+                        }
                     }
 
                 } catch (e: Exception) {
