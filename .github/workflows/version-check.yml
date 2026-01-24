@@ -1,17 +1,20 @@
 name: Version Check
 
 on:
-  # 每天 UTC 0点 (北京时间 8点) 自动运行
-  schedule:
-    - cron: '0 0 * * *'
-  
-  # 手动触发
-  workflow_dispatch:
-  
-  # PR 时也检查
+  # 当主干分支有代码改动时触发
+  push:
+    branches:
+      - master
+      - main
+
+  # 针对主干分支的 PR 触发
   pull_request:
     branches:
       - master
+      - main
+
+  # 手动触发
+  workflow_dispatch:
 
 jobs:
   check-clion-version:
