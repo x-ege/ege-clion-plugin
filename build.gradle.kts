@@ -23,7 +23,7 @@ intellij {
 tasks.patchPluginXml {
     version.set(project.version.toString())
     sinceBuild.set("233")
-    untilBuild.set("252.*")  // 2025.2 - 当前已知的最新主分支
+    untilBuild.set("253.*")  // 2025.2 - 当前已知的最新主分支
     changeNotes.set("""
         <h3>Version ${project.version}</h3>
         <ul>
