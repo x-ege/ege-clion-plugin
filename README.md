@@ -160,27 +160,22 @@ cd ege-jetbrains-plugin
 
 - **CI Workflow**: 每次推送到 `master` 分支或创建 Pull Request 时，自动运行测试和构建
 - **Release Workflow**: 推送版本 tag（如 `1.0.1`）时，自动构建并发布到 GitHub Releases
-- **Version Check Workflow**: 每天自动检查 CLion 新版本，确保插件兼容性
+- **Version Check Workflow**: 在主干和 PR 上检查插件没有重新引入 `untilBuild` 上限
 
 ### 🔧 版本管理任务
 
 插件提供了自动化的版本管理工具：
 
 ```bash
-# 检查 untilBuild 是否匹配 CLion 最新版本
+# 检查插件是否保持开放式兼容范围
 ./gradlew checkClionVersion
-
-# 自动更新 untilBuild 到最新版本
-./gradlew updateUntilBuild
 ```
-
-详细文档请查看 [VERSION_MANAGEMENT.md](docs/VERSION_MANAGEMENT.md)
 
 ---
 
 ## 📋 系统要求
 
-- **CLion**: 2023.3 或更高版本（支持到 2025.1+）
+- **CLion**: 2023.3 或更高版本（不设置最高版本上限；最新验证到 2026.2）
 - **操作系统**: Windows, macOS, Linux
 - **编译器**:
   - Windows: MinGW-w64 或 MSVC (2010-2022)

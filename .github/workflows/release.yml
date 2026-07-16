@@ -84,7 +84,7 @@ jobs:
           - EGE 图形库项目向导支持
           - CLion 专属集成
           - 多平台支持 (Windows, macOS, Linux)
-          - 支持 CLion 2023.3 - 2025.1 (最新版本)
+          - 支持 CLion 2023.3 及更高版本（无最高版本上限）
           
           ### 安装方法
           1. 下载下方的插件文件 (\`${{ steps.artifact_name.outputs.artifact_name }}\`)

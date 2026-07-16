@@ -4,13 +4,9 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.ui.Messages
-import com.intellij.ide.plugins.PluginManagerCore
-import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.project.Project
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 
 class HelpAction : AnAction() {
     private val logger = Logger.getInstance(HelpAction::class.java)
@@ -24,8 +20,8 @@ class HelpAction : AnAction() {
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project
 
-        // 获取插件真实版本号（找不到时使用默认值）
-        val pluginVersion = PluginManagerCore.getPlugin(PluginId.getId("org.xege.creator"))?.version ?: "1.0"
+        // 版本号由 Gradle 在构建时注入资源包
+        val pluginVersion = XegeBundle.message("plugin.version")
 
         // 显示插件信息对话框
         Messages.showInfoMessage(

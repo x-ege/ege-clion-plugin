@@ -18,12 +18,15 @@ intellij {
     version.set("2023.3")
     type.set("CL") // CLion
     plugins.set(listOf("com.intellij.clion"))
+    // 1.x 插件默认会自动补上与开发 SDK 相同分支的 until-build。
+    // 关闭自动补丁，使用 plugin.xml 中仅含 since-build 的开放式兼容范围。
+    updateSinceUntilBuild.set(false)
 }
 
 tasks.patchPluginXml {
     version.set(project.version.toString())
-    sinceBuild.set("233")
-    untilBuild.set("261.*")  // 2026.1 - 当前已知的最新主分支
+    // 保持开放式兼容范围，避免新 CLion 版本仅因 untilBuild 上限而拒绝安装。
+    // 新版本兼容性由 Plugin Verifier 和 Marketplace 审核持续兜底。
     changeNotes.set("""
         <h3>Version ${project.version}</h3>
         <ul>
@@ -52,6 +55,9 @@ tasks {
     
     // 将 assets 目录复制到 resources 中
     processResources {
+        filesMatching("messages/XegeBundle.properties") {
+            expand("pluginVersion" to project.version)
+        }
         from("assets") {
             into("assets")
         }
@@ -71,61 +77,28 @@ kotlin {
 // ========================================
 
 /**
- * 任务1: 检查 CLion 最新版本
- * 如果 untilBuild 不是最新版本，则报错
+ * 确保插件保持开放式兼容范围。
+ * JetBrains 推荐不设置 untilBuild，以免每个 IDE 大版本都必须重新发布插件。
  */
 tasks.register("checkClionVersion") {
     group = "verification"
-    description = "检查 untilBuild 是否匹配 CLion 最新发布版本"
-    
-    doLast {
-        val patchTask = tasks.named("patchPluginXml").get() as org.jetbrains.intellij.tasks.PatchPluginXmlTask
-        val currentUntilBuild = patchTask.untilBuild.get()
-        
-        VersionChecker.checkVersion(currentUntilBuild, throwOnMismatch = true)
-    }
-}
+    description = "检查插件是否未设置 untilBuild 上限"
+    dependsOn("patchPluginXml")
 
-/**
- * 任务2: 自动更新 untilBuild
- * 将 untilBuild 更新为 CLion 最新发布的主版本号
- */
-tasks.register("updateUntilBuild") {
-    group = "version"
-    description = "自动将 untilBuild 更新为 CLion 最新发布版本"
-    
     doLast {
-        val latestBuild = VersionChecker.getLatestClionBuildNumber()
-        val buildFile = file("build.gradle.kts")
-        var content = buildFile.readText()
-        
-        // 使用正则表达式替换 untilBuild
-        val regex = """untilBuild\.set\("(\d+)\.\*"\)""".toRegex()
-        val match = regex.find(content)
-        
-        if (match != null) {
-            val currentBuild = match.groupValues[1]
-            
-            if (currentBuild == latestBuild) {
-                println("✓ untilBuild 已是最新版本 ($latestBuild.*)")
-            } else {
-                content = content.replace(
-                    """untilBuild.set("$currentBuild.*")""",
-                    """untilBuild.set("$latestBuild.*")"""
-                )
-                
-                buildFile.writeText(content)
-                
-                println("""
-                    ✓ 已更新 untilBuild！
-                    旧版本: $currentBuild.*
-                    新版本: $latestBuild.*
-                    
-                    请检查更改并提交到版本控制系统
-                """.trimIndent())
-            }
-        } else {
-            throw GradleException("无法在 build.gradle.kts 中找到 untilBuild 配置")
+        val patchedPluginXml = layout.buildDirectory
+            .file("patchedPluginXmlFiles/plugin.xml")
+            .get()
+            .asFile
+        val content = patchedPluginXml.readText()
+        val untilBuild = Regex("""until-build="([^"]+)"""").find(content)?.groupValues?.get(1)
+
+        if (untilBuild != null) {
+            throw GradleException(
+                "生成的 plugin.xml 中仍存在 until-build=$untilBuild。请保持开放式兼容范围。"
+            )
         }
+
+        println("✓ 未设置 untilBuild；插件不会因 IDE 主版本升级而被元数据阻止安装")
     }
 }

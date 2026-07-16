@@ -72,7 +72,7 @@
 
 ## 🛠️ 兼容性
 
-- **CLion 版本**：2023.3 或更高版本（支持到 2025.2+）
+- **CLion 版本**：2023.3 或更高版本（不设置最高版本上限；最新验证到 2026.2）
 - **操作系统**：Windows、macOS、Linux
 - **编译器**：
   - Windows: MinGW-w64 或 MSVC (2010-2022)
@@ -234,7 +234,7 @@ cd ege-jetbrains-plugin
 
 - **CI Workflow**: 每次推送到 `master` 分支或创建 Pull Request 时，自动运行测试和构建
 - **Release Workflow**: 推送版本 tag（如 `1.0.1`）时，自动构建并发布到 GitHub Releases
-- **Version Check Workflow**: 每天自动检查 CLion 新版本，确保插件兼容性
+- **Version Check Workflow**: 在主干和 PR 上检查插件没有重新引入 `untilBuild` 上限
 
 ---
 
