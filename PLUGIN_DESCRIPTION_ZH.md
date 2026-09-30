@@ -8,7 +8,7 @@
 
 ## ✨ 主要功能
 
-- **一键创建 EGE 项目**：在 CLion 新建项目向导中提供 "EGE" 项目类型
+- **一键创建 EGE 项目**：在 CLion 新建项目向导的 **C++** 分组中提供 **Xege (EGE)** 项目类型
 - **自动配置 CMake 构建系统**：无需手动编写构建脚本，开箱即用
 - **示例代码**：包含可运行的彩色圆形动画示例
 - **灵活的库使用方式**：
@@ -44,13 +44,15 @@
 ### 创建 EGE 项目
 
 1. 打开 CLion，点击 `File → New → Project...`
-2. 在左侧项目类型列表中选择 **EGE**
+2. 在左侧 **C++** 分组中选择 **Xege (EGE)**
 3. 配置项目选项：
    - **项目名称和位置**：输入你的项目名称和保存路径
    - **使用 EGE 源码**：勾选复选框 "直接使用 EGE 源码作为项目依赖"
      - ✅ 不勾选（默认）：使用预编译的静态库（推荐，编译更快）
      - ☑️ 勾选：使用 EGE 源码（可查看和修改源码）
 4. 点击 `Create` 创建项目
+
+> 如果使用 1.1.5，请向下滚动左侧列表，在 **Other** 分组中选择 **Easy Graphics Engine**。也可在打开项目后使用 `Tools → EGE Options → Create EGE Project` 创建项目。
 
 ### 编译和运行
 
@@ -167,9 +169,9 @@ A: 本插件专为 CLion 设计，因为它依赖 CLion 的 C/C++ 项目支持�
 
    ![新建项目](https://via.placeholder.com/800x500?text=File+→+New+→+Project)
 
-2. **选择 EGE 项目类型**
+2. **在 C++ 分组中选择 Xege (EGE) 项目类型**
 
-   ![选择 EGE](https://via.placeholder.com/800x500?text=选择+EGE+项目类型)
+   ![选择 Xege (EGE)](https://via.placeholder.com/800x500?text=选择+Xege+(EGE)+项目类型)
 
 3. **配置项目选项**
 

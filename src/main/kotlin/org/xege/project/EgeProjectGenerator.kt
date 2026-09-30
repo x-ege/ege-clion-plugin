@@ -430,6 +430,14 @@ class EgeProjectGenerator : CLionProjectGenerator<EgeProjectSettings>() {
 
     override fun getDescription(): String = XegeBundle.message("generator.description")
 
+    // CLion defaults custom generators to Other, below the bundled web templates.
+    // Keep this C++ project type visible alongside C++ Executable and C++ Library.
+    override fun getGroupName(): String = "C++"
+
+    override fun getGroupDisplayName(): String = "C++"
+
+    override fun getGroupOrder(): Int = GroupOrders.CPP.order
+
     override fun getLogo(): Icon? {
         return try {
             // 加载插件图标并缩放到 16x16
