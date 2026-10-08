@@ -239,7 +239,6 @@ private fun getDemoLabel(): String = XegeBundle.message("options.demo.label")
  * 保存项目创建选项
  */
 data class EgeProjectSettings(
-    val useSourceCode: Boolean = false,
     val demoOption: DemoOption = DemoOptionsManager.getDemoOptions().first()
 )
 
@@ -309,7 +308,7 @@ class DemoComboBoxRenderer : DefaultListCellRenderer() {
  * 在新建项目向导中显示项目选项
  */
 class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
-    private val useSourceCodeCheckbox = JCheckBox(XegeBundle.message("options.checkbox.use.source"), false)
+    private val sourceLabel = JLabel(XegeBundle.message("options.label.native.source"))
     private val demoOptions = DemoOptionsManager.getDemoOptions()
     private val demoOptionComboBox = JComboBox(demoOptions)
     private val descriptionLabel = JLabel()
@@ -339,8 +338,8 @@ class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
         optionsPanel.add(Box.createVerticalStrut(10))
 
         // 添加复选框
-        useSourceCodeCheckbox.alignmentX = Component.LEFT_ALIGNMENT
-        optionsPanel.add(useSourceCodeCheckbox)
+        sourceLabel.alignmentX = Component.LEFT_ALIGNMENT
+        optionsPanel.add(sourceLabel)
 
         optionsPanel.add(Box.createVerticalStrut(15))
 
@@ -395,7 +394,6 @@ class EgeProjectGeneratorPeer : ProjectGeneratorPeer<EgeProjectSettings> {
 
     override fun getSettings(): EgeProjectSettings {
         return EgeProjectSettings(
-            useSourceCode = useSourceCodeCheckbox.isSelected,
             demoOption = demoOptionComboBox.selectedItem as DemoOption
         )
     }
@@ -429,6 +427,14 @@ class EgeProjectGenerator : CLionProjectGenerator<EgeProjectSettings>() {
     override fun getName(): String = XegeBundle.message("generator.name")
 
     override fun getDescription(): String = XegeBundle.message("generator.description")
+
+    // CLion defaults custom generators to Other, below the bundled web templates.
+    // Keep this C++ project type visible alongside C++ Executable and C++ Library.
+    override fun getGroupName(): String = "C++"
+
+    override fun getGroupDisplayName(): String = "C++"
+
+    override fun getGroupOrder(): Int = GroupOrders.CPP.order
 
     override fun getLogo(): Icon? {
         return try {
@@ -481,9 +487,9 @@ class EgeProjectGenerator : CLionProjectGenerator<EgeProjectSettings>() {
         settings: EgeProjectSettings,
         module: Module
     ) {
-        logger.info("Starting EGE project generation at: ${baseDir.path}, useSourceCode: ${settings.useSourceCode}")
+        logger.info("Starting EGE project generation at: ${baseDir.path}, pinned native sources")
 
-        ProgressManager.getInstance().run(object : Task.Backgroundable(project, XegeBundle.message("generator.task.title"), false) {
+        ProgressManager.getInstance().run(object : Task.Modal(project, XegeBundle.message("generator.task.title"), true) {
             override fun run(indicator: ProgressIndicator) {
                 indicator.isIndeterminate = false
                 indicator.fraction = 0.0
@@ -497,6 +503,8 @@ class EgeProjectGenerator : CLionProjectGenerator<EgeProjectSettings>() {
                     indicator.text = XegeBundle.message("generator.task.complete")
 
                     logger.info("EGE project generated successfully at: ${baseDir.path}")
+                } catch (e: com.intellij.openapi.progress.ProcessCanceledException) {
+                    throw e
                 } catch (e: Exception) {
                     logger.error("Failed to generate EGE project", e)
                     throw RuntimeException(XegeBundle.message("generator.error.failed", e.message ?: "Unknown error"), e)
@@ -512,19 +520,7 @@ class EgeProjectGenerator : CLionProjectGenerator<EgeProjectSettings>() {
         val targetPath = File(targetDir.path)
 
         try {
-            // 第一步：复制 cmake 模板文件 (30%)
-            indicator.fraction = 0.1
-            indicator.text = XegeBundle.message("generator.task.copying.cmake")
-            ResourceCopyHelper.copyCMakeTemplateFiles(targetPath, settings.useSourceCode, settings.demoOption.fileName)
-
-            // 第二步：根据选项复制对应的 EGE 资源
-            indicator.fraction = 0.4
-            indicator.text = if (settings.useSourceCode) {
-                XegeBundle.message("generator.task.copying.source")
-            } else {
-                XegeBundle.message("generator.task.copying.library")
-            }
-            ResourceCopyHelper.copyEgeLibrary(targetPath, settings.useSourceCode, indicator)
+            ResourceCopyHelper.generateProject(targetPath, settings.demoOption.fileName, indicator)
 
             indicator.fraction = 1.0
             indicator.text = XegeBundle.message("generator.task.file.copy.complete")

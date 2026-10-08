@@ -28,6 +28,14 @@
 
 #include "ege.h"
 #include "ege/types.h"
+#include "backend/interface/Window.h"
+
+// EGE_GDIPLUS also gates the historical enhanced public API. Keep those
+// declarations visible to native callers, but never compile GDI+ internals on
+// a non-Windows target; Core Graphics implements the same API surface there.
+#ifndef _WIN32
+#undef EGE_GDIPLUS
+#endif
 
 #define EGE_TOSTR_(x) #x
 #define EGE_TOSTR(x)  EGE_TOSTR_(x)
@@ -84,20 +92,26 @@
 #define EGE_WNDCLSNAME_W EGE_L(EGE_WNDCLSNAME)
 
 #include <string>
+#include <thread>
 
 #ifdef EGE_GDIPLUS
 #   if defined(NOMINMAX) && defined(_MSC_VER)
 #       define max(a, b) (((a) > (b)) ? (a) : (b))
 #       define min(a, b) (((a) < (b)) ? (a) : (b))
-#       include <gdiplus.h>
+#       ifdef _WIN32
+#           include <gdiplus.h>
+#       endif
 #       undef max
 #       undef min
 #   else
-#       include <gdiplus.h>
+#       ifdef _WIN32
+#           include <gdiplus.h>
+#       endif
 #   endif
 #endif
 
 #include "thread_queue.h"
+#include "sync/semaphore.h"
 
 #ifndef ERROR_SUCCESS
 #define ERROR_SUCCESS 0
@@ -165,7 +179,8 @@ class egeControlBase;   // egeControlBase 前置声明
 // 定义ege全局状态对象
 struct _graph_setting
 {
-    bool has_init;
+    Semaphore init_sem;
+
     bool unicode_char_message;
 
     struct _graph
@@ -197,6 +212,16 @@ struct _graph_setting
     std::wstring window_caption;
     HICON        window_hicon;
     color_t      window_initial_color;
+
+    Window* getNativeWindow() const
+    {
+#ifdef _WIN32
+        return NULL;
+#else
+        return window;
+#endif
+    }
+
     int          exit_flag;
     int          exit_window;
     int          update_mark_count; // 更新标记
@@ -209,7 +234,7 @@ struct _graph_setting
 
     thread_queue<EGEMSG>*msgkey_queue, *msgmouse_queue;
 
-    HANDLE threadui_handle;
+    std::thread threadui;
 
     /* 鼠标状态记录 */
     Point mouse_pos;
@@ -235,7 +260,6 @@ struct _graph_setting
 #ifdef EGE_GDIPLUS
     ULONG_PTR g_gdiplusToken;
 #endif
-    LARGE_INTEGER get_highfeq_time_start;
     DWORD         fclock_start;
     // double delay_dwLast;
     double delay_ms_dwLast;
@@ -249,75 +273,11 @@ struct _graph_setting
     /* 函数用临时缓冲区 */
     DWORD g_t_buff[1024 * 8];
 
+    Window* window;
+
 public:
     _graph_setting();
-};
-
-template <typename T> struct count_ptr
-{
-    explicit count_ptr(T* p)
-    {
-        // m_mutex = new Mutex;
-        m_cnt = new long(1);
-        m_p   = p;
-    }
-
-    ~count_ptr()
-    {
-        // m_mutex->Lock();
-        --*m_cnt;
-        if (*m_cnt == 0) {
-            delete m_p;
-            m_p = static_cast<T*>(0);
-            delete m_cnt;
-            m_cnt = static_cast<long*>(0);
-        }
-        // Mutex* mutex = m_mutex;
-        // m_mutex = static_cast<Mutex*> ( 0 );
-        // mutex->UnLock();
-    }
-
-    count_ptr(const count_ptr<T>& count_ptr_)
-    {
-        // m_mutex = count_ptr_.m_mutex;
-        // m_mutex->Lock();
-        m_p   = count_ptr_.m_p;
-        m_cnt = count_ptr_.m_cnt;
-        ++*m_cnt;
-        // m_mutex->UnLock();
-    }
-
-    count_ptr<T>& operator=(const count_ptr<T>& count_ptr_)
-    {
-        // m_mutex->Lock();
-        --*m_cnt;
-        if (*m_cnt == 0) {
-            delete m_p;
-            m_p = static_cast<T*>(0);
-            delete m_cnt;
-            m_cnt = static_cast<long*>(0);
-        }
-        // Mutex* mutex = m_mutex;
-        // m_mutex = count_ptr_.m_mutex;
-        // mutex->UnLock();
-
-        // m_mutex->Lock();
-        m_p   = count_ptr_.m_p;
-        m_cnt = static_cast<long*>(count_ptr_.m_cnt);
-        ++*m_cnt;
-        // m_mutex->UnLock();
-        return *this;
-    }
-
-    operator T*() const { return m_p; }
-
-    T& operator*() const { return *m_p; }
-    T* operator->() const { return m_p; }
-
-private:
-    T*    m_p;
-    long* m_cnt;
-    // Mutex* m_mutex;
+    ~_graph_setting();
 };
 
 void internal_panic(const wchar_t* errmsg);

@@ -12,7 +12,8 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
     
     steps:
       - name: Checkout code
@@ -28,11 +29,11 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Run tests
-        run: ./gradlew test
+      - name: Test and build formal plugin ZIP and native test runtime
+        run: ./gradlew test buildPlugin stageNativeSmokeRuntime
 
-      - name: Build plugin
-        run: ./gradlew buildPlugin
+      - name: Verify resources in the delivered ZIP
+        run: python3 scripts/check_plugin_zip.py build/distributions/*.zip --report build/reports/plugin-zip-validation.json
 
       - name: Verify plugin
         run: ./gradlew verifyPlugin
@@ -46,4 +47,58 @@ jobs:
         with:
           name: plugin-artifact
           path: build/distributions/*.zip
+          retention-days: 7
+
+      - name: Upload native test kit using the same plugin ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-build-kit
+          path: |
+            build/distributions/*.zip
+            build/native-smoke-runtime/*.jar
+          if-no-files-found: error
+          retention-days: 7
+
+  native:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-build-kit
+          path: build/native-kit
+      - name: Install Linux native build and window dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build pkg-config libcairo2-dev libx11-dev xvfb xauth
+      - name: Generate from formal ZIP and build native projects in paths with spaces
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            python scripts/native_plugin_smoke.py --kit build/native-kit --linux-window
+          else
+            python scripts/native_plugin_smoke.py --kit build/native-kit
+          fi
+      - name: Upload native logs and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-verification-${{ matrix.os }}
+          path: |
+            build/native-ci/**/*.log
+            build/native-ci/report.json
           retention-days: 7

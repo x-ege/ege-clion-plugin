@@ -35,6 +35,24 @@ int egeControlBase::s_maxchildid = 1024;
 
 static egectlvec s_egeCtlParent;
 
+static bool controlIsInSubtree(const egeControlBase* control, const egeControlBase* subtreeRoot)
+{
+    for (const egeControlBase* current = control; current != NULL; current = current->parent()) {
+        if (current == subtreeRoot) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void clearFocusInSubtree(egeControlBase* subtreeRoot)
+{
+    egeControlBase*& focus = graph_setting.egectrl_focus;
+    if (focus != NULL && controlIsInSubtree(focus, subtreeRoot)) {
+        focus = NULL;
+    }
+}
+
 egeControlBase::InitObject::InitObject(egeControlBase* pThis, int inherit_level)
 {
     m_this          = pThis;
@@ -74,15 +92,48 @@ void egeControlBase::initok()
 
 egeControlBase::~egeControlBase()
 {
-    if (m_parent) {
-        m_parent->delchild(this);
-        egectlmap*& cmap = (egectlmap*&)m_childmap;
-        if (cmap) {
-            egectlmap::iterator it = cmap->begin(); // 以后要附加排序
-            for (; it != cmap->end(); ++it) {
-                m_parent->addchild(*it);
+    egeControlBase* oldParent = m_parent;
+    egeControlBase* focusedDescendant = graph_setting.egectrl_focus;
+    const bool restoreDescendantFocus = oldParent != NULL && focusedDescendant != NULL &&
+        focusedDescendant != this && controlIsInSubtree(focusedDescendant, this);
+
+    // 焦点属于整棵控件树；在子控件脱离或重新挂接前清除，此时父链仍能识别完整子树。
+    clearFocusInSubtree(this);
+
+    if (oldParent) {
+        oldParent->delchild(this);
+    }
+
+    egectlmap*& cmap = (egectlmap*&)m_childmap;
+    egectlvec*& cvec = (egectlvec*&)m_childzorder;
+    if (cmap) {
+        while (cmap->size() > 0) {
+            egeControlBase* child = *cmap->begin();
+            if (oldParent) {
+                oldParent->addchild(child);
+            } else {
+                delchild(child);
             }
         }
+        delete cmap;
+        cmap = NULL;
+    }
+    if (cvec) {
+        delete cvec;
+        cvec = NULL;
+    }
+
+    // 销毁中间节点会把存活子控件重新挂到旧父节点；重新可达后保留后代焦点，但绝不
+    // 把焦点恢复到正在销毁的对象。
+    if (restoreDescendantFocus && graph_setting.egectrl_focus == NULL &&
+        controlIsInSubtree(focusedDescendant, oldParent)) {
+        graph_setting.egectrl_focus = focusedDescendant;
+    }
+
+    struct _graph_setting* pg = &graph_setting;
+    if (pg->egectrl_root == this) {
+        pg->egectrl_root = NULL;
+        pg->egectrl_focus = NULL;
     }
 
     delimage(m_mainbuf);
@@ -175,6 +226,8 @@ int egeControlBase::addchild(egeControlBase* pChild)
         cmap = new egectlmap;
         cvec = new egectlvec;
     }
+    egeControlBase* focusedControl = graph_setting.egectrl_focus;
+    const bool restoreFocus = focusedControl != NULL && controlIsInSubtree(focusedControl, pChild);
     if (pChild->m_parent) {
         pChild->m_parent->delchild(pChild);
     }
@@ -185,6 +238,10 @@ int egeControlBase::addchild(egeControlBase* pChild)
     pChild->m_parent = this;
     pChild->m_zOrder = allocZorder();
     onAddChild(pChild);
+    if (restoreFocus && graph_setting.egectrl_focus == NULL &&
+        controlIsInSubtree(pChild, graph_setting.egectrl_root)) {
+        graph_setting.egectrl_focus = focusedControl;
+    }
     return 0;
 }
 
@@ -197,6 +254,8 @@ int egeControlBase::delchild(egeControlBase* pChild)
     }
     egectlmap::iterator it = cmap->find(pChild);
     if (it != cmap->end()) {
+        // 脱离的控件已无法从活动树访问，键盘和鼠标事件不能继续指向它或其后代。
+        clearFocusInSubtree(pChild);
         egectlvec::iterator itv = cvec->begin();
         for (; itv != cvec->end(); itv++) {
             if (*itv == *it) {
@@ -338,7 +397,7 @@ void egeControlBase::keymsgup(unsigned key, int flag)
     {
         PushTarget _target;
         settarget(buf());
-        onKeyUp((int)key, flag);
+        ret = onKeyUp((int)key, flag);
     }
     if (ret == 0) {
         egectlmap*& cmap = (egectlmap*&)m_childmap;
@@ -361,7 +420,7 @@ void egeControlBase::keymsgchar(unsigned key, int flag)
     {
         PushTarget _target;
         settarget(buf());
-        onKeyChar((int)key, flag);
+        ret = onKeyChar((int)key, flag);
     }
     if (ret == 0) {
         egectlmap*& cmap = (egectlmap*&)m_childmap;

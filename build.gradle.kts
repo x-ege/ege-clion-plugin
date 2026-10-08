@@ -8,6 +8,9 @@ version = project.findProperty("pluginVersion") as String? ?: "1.0.0"
 
 repositories {
     mavenCentral()
+    maven("https://packages.jetbrains.team/maven/p/ij/intellij-dependencies") {
+        content { includeGroup("com.intellij.remoterobot") }
+    }
 }
 
 dependencies {
@@ -101,4 +104,60 @@ tasks.register("checkClionVersion") {
 
         println("✓ 未设置 untilBuild；插件不会因 IDE 主版本升级而被元数据阻止安装")
     }
+}
+
+// Fail before compiling if resources are stale, incomplete, or contain precompiled binaries.
+val verifyBundledAssets by tasks.registering(Exec::class) {
+    commandLine("python3", "scripts/package_ege_source.py", "--check")
+}
+tasks.processResources { dependsOn(verifyBundledAssets) }
+val testSourcePackaging by tasks.registering(Exec::class) {
+    group = "verification"
+    commandLine("python3", "-m", "unittest", "discover", "-s", "tests", "-p", "test_source_packaging.py", "-v")
+}
+tasks.test { dependsOn(testSourcePackaging) }
+
+// A tiny test launcher, without unpacked plugin classes/resources, exercises the ZIP in CI.
+val nativeSmokeTool by tasks.registering(Jar::class) {
+    dependsOn(tasks.testClasses)
+    archiveFileName.set("native-smoke-tool.jar")
+    from(sourceSets.test.get().output) {
+        include("org/xege/project/EgeNativeSmokeTool*.class")
+    }
+}
+tasks.register<Sync>("stageNativeSmokeRuntime") {
+    dependsOn(nativeSmokeTool)
+    into(layout.buildDirectory.dir("native-smoke-runtime"))
+    from(nativeSmokeTool)
+    from(provider {
+        configurations.testRuntimeClasspath.get().filter {
+            it.name.matches(Regex("kotlin-stdlib-[0-9].*\\.jar"))
+        }
+    })
+}
+
+// A separate, observation-only GUI startup probe; no changes to native CI/tests.
+val robotVersion = "0.11.23"
+val guiProbe by sourceSets.creating
+dependencies {
+    add(guiProbe.implementationConfigurationName, "com.intellij.remoterobot:remote-robot:$robotVersion")
+}
+tasks.downloadRobotServerPlugin { version.set(robotVersion) }
+tasks.runIdeForUiTests {
+    systemProperty("robot-server.port", "8082")
+    systemProperty("robot-server.host.public", "false")
+    systemProperty("idea.is.internal", "false")
+    autoReloadPlugins.set(false)
+    systemDir.set(layout.buildDirectory.dir("idea-sandbox/system-uiTest").map { it.asFile })
+}
+val guiProbeJar by tasks.registering(Jar::class) {
+    dependsOn(tasks.named(guiProbe.classesTaskName))
+    archiveFileName.set("gui-startup-observer.jar")
+    from(guiProbe.output)
+}
+tasks.register<Sync>("stageGuiProbeRuntime") {
+    dependsOn(guiProbeJar)
+    into(layout.buildDirectory.dir("gui-probe-runtime"))
+    from(guiProbeJar)
+    from(provider { guiProbe.runtimeClasspath.files.filter { it.extension == "jar" } })
 }

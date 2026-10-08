@@ -46,7 +46,7 @@ bool saveRgbDataAsBMP(const char* filename, const unsigned char* data, uint32_t 
 
     auto lineSize = hasAlpha ? w * 4 : ((w * 3 + 3) / 4) * 4; // 4 bytes aligned when no alpha.
 
-    /// 先在 dataCopy 里面处理一遍, 之后一次性写入到文件, 减少耗时
+    /// Process in dataCopy first, then write to file at once to reduce time consumption
     std::vector<uint8_t> tmpData(lineSize * h);
     auto* dataCopy = tmpData.data();
 
@@ -277,6 +277,22 @@ std::string_view errorCodeToString(ErrorCode errorCode) {
         return "Frame capture failed";
     case ErrorCode::MemoryAllocationFailed:
         return "Memory allocation failed";
+    case ErrorCode::FileOpenFailed:
+        return "Failed to open video file";
+    case ErrorCode::UnsupportedVideoFormat:
+        return "Video format is not supported";
+    case ErrorCode::SeekFailed:
+        return "Seek operation failed";
+    case ErrorCode::WriterOpenFailed:
+        return "Failed to open video writer";
+    case ErrorCode::WriterWriteFailed:
+        return "Failed to write frame";
+    case ErrorCode::WriterCloseFailed:
+        return "Failed to finalize file";
+    case ErrorCode::WriterNotOpened:
+        return "Writer not opened";
+    case ErrorCode::UnsupportedCodec:
+        return "Codec not supported on this platform";
     case ErrorCode::InternalError:
         return "Unknown or internal error";
     default:

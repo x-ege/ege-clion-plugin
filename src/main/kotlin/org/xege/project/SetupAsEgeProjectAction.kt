@@ -95,7 +95,7 @@ class SetupAsEgeProjectAction : AnAction() {
         }
         
         val settings = dialog.settings
-        logger.info("Project settings: useSourceCode=${settings.useSourceCode}, demo=${settings.demoOption}")
+        logger.info("Project settings: demo=${settings.demoOption}")
         
         // 初始化项目
         initializeEgeProject(project, projectDir, settings)
@@ -140,20 +140,8 @@ class SetupAsEgeProjectAction : AnAction() {
                 indicator.text = XegeBundle.message("setup.task.initializing")
                 
                 try {
-                    // 复制 CMake 模板文件
-                    indicator.fraction = 0.2
-                    indicator.text = XegeBundle.message("setup.task.cmake")
-                    ResourceCopyHelper.copyCMakeTemplateFiles(projectDir, settings.useSourceCode, settings.demoOption.fileName)
-                    
-                    // 复制 EGE 库文件
-                    indicator.fraction = 0.5
-                    indicator.text = if (settings.useSourceCode) {
-                        XegeBundle.message("setup.task.source")
-                    } else {
-                        XegeBundle.message("setup.task.library")
-                    }
-                    ResourceCopyHelper.copyEgeLibrary(projectDir, settings.useSourceCode, indicator)
-                    
+                    ResourceCopyHelper.generateProject(projectDir, settings.demoOption.fileName, indicator)
+
                     indicator.fraction = 0.9
                     indicator.text = XegeBundle.message("setup.task.finalizing")
                     
@@ -168,11 +156,7 @@ class SetupAsEgeProjectAction : AnAction() {
                     
                     // 在 EDT 线程上显示成功消息
                     ApplicationManager.getApplication().invokeLater {
-                        val typeText = if (settings.useSourceCode) {
-                            XegeBundle.message("setup.success.source")
-                        } else {
-                            XegeBundle.message("setup.success.library")
-                        }
+                        val typeText = XegeBundle.message("setup.success.source")
                         Messages.showInfoMessage(
                             project,
                             XegeBundle.message("setup.success.message", typeText),
