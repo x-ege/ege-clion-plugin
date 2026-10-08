@@ -154,16 +154,25 @@ def trial_option(image, ocr):
         raise RuntimeError('License window differs from the audited unactivated CLion trial selector')
     candidates = []
     for first in ocr:
-        if first['text'] != 'Start' or float(first['conf']) < 90:
+        if float(first['conf']) < 70 or box(first)[1] >= 50:
+            continue
+        # Tesseract 5.3 (runner) and 5.5 (local) can merge these words or score them differently.
+        # The full audited pixel fingerprint above remains the identity check.
+        if first['text'].lower() == 'starttrial':
+            candidates.append(first)
+            continue
+        if first['text'].lower() != 'start':
             continue
         x, y, w, h = box(first)
         for second in ocr:
             sx, sy, sw, sh = box(second)
-            if (second['text'] == 'trial' and float(second['conf']) >= 90
+            if (second['text'].lower() == 'trial' and float(second['conf']) >= 70
                     and 0 <= sx-(x+w) <= 12 and abs(sy-y) <= 3 and y < 50):
                 candidates.append(first)
     if len(candidates) != 1:
-        raise RuntimeError('Cannot uniquely identify the Start trial option in the actual license window')
+        headings = [{'text': w['text'], 'confidence': w['conf'], 'box': box(w)}
+                    for w in ocr if box(w)[1] < 50]
+        raise RuntimeError(f'Cannot uniquely identify the Start trial option; audited header OCR: {headings}')
     return candidates[0]
 
 
