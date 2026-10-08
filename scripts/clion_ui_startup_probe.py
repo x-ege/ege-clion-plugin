@@ -21,6 +21,48 @@ ROOT = Path(__file__).resolve().parents[1]
 ROBOT_VERSION = '0.11.23'
 
 
+class WindowInventoryUnavailable(RuntimeError):
+    pass
+
+
+class WindowInventory:
+    """Allow only known early EWMH/display readiness failures, for at most 30 seconds."""
+    def __init__(self, log_path, retry_seconds=30):
+        self.log_path = log_path
+        self.retry_seconds = retry_seconds
+        self.unready_since = None
+
+    def record(self, record):
+        with self.log_path.open('a') as log:
+            log.write(json.dumps(record) + '\n')
+
+    def observe(self, env=None, timeout=5, now=None):
+        now = time.monotonic() if now is None else now
+        try:
+            result = subprocess.run(['wmctrl', '-lG'], env=env, capture_output=True,
+                                    text=True, check=False, timeout=timeout)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            self.record({'time': now, 'execution_error': repr(error)})
+            raise
+        self.record({'time': now, 'returncode': result.returncode,
+                     'stdout': result.stdout, 'stderr': result.stderr})
+        if result.returncode == 0:
+            self.unready_since = None
+            return parse_windows(result.stdout)  # An empty successful list is a valid observation.
+        readiness_error = re.fullmatch(
+            r'\s*(?:Cannot open display\.|Cannot get client list properties\.\s*'
+            r'\(_NET_CLIENT_LIST or _WIN_CLIENT_LIST\))?\s*', result.stderr)
+        if result.returncode != 1 or result.stdout.strip() or not readiness_error:
+            raise subprocess.CalledProcessError(result.returncode, result.args,
+                                                output=result.stdout, stderr=result.stderr)
+        if self.unready_since is None:
+            self.unready_since = now
+        if now - self.unready_since >= self.retry_seconds:
+            raise WindowInventoryUnavailable(
+                f'wmctrl remained unavailable for {self.retry_seconds}s; see {self.log_path}')
+        return None  # Not an empty window list, and never evidence of GUI success.
+
+
 def parse_windows(listing):
     """Read wmctrl's EWMH window inventory without changing focus or geometry."""
     windows = []
@@ -142,6 +184,7 @@ def main():
     deadline = started + args.timeout
     count = 0
     titles = []
+    inventory_reader = WindowInventory(output / 'wmctrl-observations.jsonl')
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     with (output / 'window-manager.log').open('w') as wm_log, (output / 'clion-launch.log').open('w') as ide_log:
         try:
@@ -154,9 +197,18 @@ def main():
                 screenshot = output / f'screen-{count:03}.png'
                 subprocess.run(['import', '-silent', '-window', 'root', str(screenshot)],
                                env=env, check=True, timeout=min(10, max(1, deadline-time.monotonic())))
-                inventory = subprocess.run(['wmctrl', '-lG'], env=env, capture_output=True,
-                                           text=True, check=True, timeout=5)
-                windows = parse_windows(inventory.stdout)
+                windows = inventory_reader.observe(env, min(5, max(1, deadline-time.monotonic())))
+                if windows is None:
+                    titles = []
+                    outcome = 'window_inventory_timeout'
+                    print(f'Observation {count}: X11 inventory not ready; bounded retry', flush=True)
+                    if wm.poll() is not None:
+                        raise WindowInventoryUnavailable('Openbox exited before X11 inventory became ready')
+                    if ide.poll() is not None:
+                        outcome = 'ide_launcher_exited'
+                        break
+                    time.sleep(min(1, max(0, deadline-time.monotonic())))
+                    continue
                 (output / f'windows-{count:03}.json').write_text(json.dumps(windows, indent=2) + '\n')
                 # X11 titles work before RemoteRobot's appFrameCreated callback starts its server.
                 titles = [window['title'] for window in windows]
@@ -202,6 +254,9 @@ def main():
                     break
                 outcome = 'startup_timeout'
                 time.sleep(min(5, max(0, deadline-time.monotonic())))
+        except WindowInventoryUnavailable:
+            outcome = 'window_inventory_failed'
+            raise
         except Exception:
             outcome = 'observation_failed'
             raise
