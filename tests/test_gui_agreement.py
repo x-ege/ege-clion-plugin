@@ -94,16 +94,13 @@ class AgreementAuthorizationTest(unittest.TestCase):
             shutil.copyfile(original, screenshot)
             ocr = agreement.words(screenshot)
         target = agreement.trial_option(image, ocr)
-        self.assertIn(target['text'].lower(), {'start', 'starttrial'})
+        self.assertEqual(target['text'], 'Start trial')
         self.assertLess(agreement.box(target)[1], 50)
         width, height, data = image
         with self.assertRaises(RuntimeError):
             agreement.trial_option((width, height, bytes([data[0] ^ 1]) + data[1:]), ocr)
-        with self.assertRaises(RuntimeError):
-            agreement.trial_option(image, [w for w in ocr if 'trial' not in w['text'].lower()])
-        # The exact same known pixels may produce one merged token on another OCR version.
-        merged = {**target, 'text': 'Starttrial', 'conf': '75'}
-        self.assertEqual(agreement.trial_option(image, [merged]), merged)
+        # Runner OCR omits this radio label entirely. Exact known pixels still locate it.
+        self.assertEqual(agreement.trial_option(image, []), target)
 
 
 if __name__ == '__main__':

@@ -1,7 +1,7 @@
 """One manually authorized, expiring acceptance of the pinned User Agreement 1.4 UI.
 
 This module never activates a license, starts/resets a trial, or enters account data.
-Coordinates come from current OCR; the original unchecked checkbox is matched as
+Coordinates come from current OCR or exact visual templates; the unchecked checkbox is matched as
 a visual prerequisite, and its checkmark is verified before clicking Continue.
 """
 import csv
@@ -148,32 +148,29 @@ def telemetry_decline_button(image, ocr):
     return candidates[0]
 
 
-def trial_option(image, ocr):
+def trial_option(image, ocr=None):
     width, height, data = image
     if (width, height) != (814, 455) or hashlib.sha256(data).hexdigest() != LICENSES_PIXELS_SHA256:
         raise RuntimeError('License window differs from the audited unactivated CLion trial selector')
-    candidates = []
-    for first in ocr:
-        if float(first['conf']) < 70 or box(first)[1] >= 50:
-            continue
-        # Tesseract 5.3 (runner) and 5.5 (local) can merge these words or score them differently.
-        # The full audited pixel fingerprint above remains the identity check.
-        if first['text'].lower() == 'starttrial':
-            candidates.append(first)
-            continue
-        if first['text'].lower() != 'start':
-            continue
-        x, y, w, h = box(first)
-        for second in ocr:
-            sx, sy, sw, sh = box(second)
-            if (second['text'].lower() == 'trial' and float(second['conf']) >= 70
-                    and 0 <= sx-(x+w) <= 12 and abs(sy-y) <= 3 and y < 50):
-                candidates.append(first)
-    if len(candidates) != 1:
-        headings = [{'text': w['text'], 'confidence': w['conf'], 'box': box(w)}
-                    for w in ocr if box(w)[1] < 50]
-        raise RuntimeError(f'Cannot uniquely identify the Start trial option; audited header OCR: {headings}')
-    return candidates[0]
+    fixture = pixels(Path(__file__).resolve().parents[1] / 'tests/fixtures/clion-ui/licenses-before-trial.png')
+    if hashlib.sha256(fixture[2]).hexdigest() != LICENSES_PIXELS_SHA256:
+        raise RuntimeError('Audited trial selector fixture changed')
+    # These bounds select text from the immutable evidence, never the runtime click location.
+    # Runner Tesseract 5.3 entirely misses this radio label; match its exact pixels instead.
+    needle = region(fixture, 414, 14, 64, 20)
+    rows = [needle[r*64*3:(r+1)*64*3] for r in range(20)]
+    matches = []
+    for y in range(31):
+        for x in range(width-64+1):
+            if all(data[((y+r)*width+x)*3:((y+r)*width+x+64)*3] == row
+                   for r, row in enumerate(rows)):
+                matches.append((x, y))
+    if len(matches) != 1:
+        raise RuntimeError('Start trial visual label is not uniquely present in the actual window')
+    x, y = matches[0]
+    # Match the OCR box interface: its coordinates are normalized at 2x capture scale.
+    return {'text': 'Start trial', 'left': str(x*2), 'top': str(y*2),
+            'width': '128', 'height': '40'}
 
 
 class AgreementUI:
