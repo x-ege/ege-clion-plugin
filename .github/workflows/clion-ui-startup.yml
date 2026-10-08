@@ -1,0 +1,53 @@
+name: CLion GUI startup probe
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/clion-ui-startup.yml'
+      - 'scripts/clion_ui_startup_probe.py'
+      - 'src/guiProbe/**'
+
+permissions:
+  contents: read
+
+jobs:
+  startup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: gradle
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install official runner GUI observation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth openbox imagemagick tesseract-ocr dbus-x11 libxi6 libxtst6 libxrender1 libfreetype6 fontconfig fonts-dejavu-core libgtk-3-0t64
+      - name: Prepare current plugin and matching Robot sandbox without launching GUI
+        run: |
+          mkdir -p build/gui-startup-probe
+          ./gradlew --no-daemon buildPlugin stageGuiProbeRuntime prepareUiTestingSandbox --console=plain 2>&1 | tee build/gui-startup-probe/preparation.log
+      - name: Observe CLion startup for at most ten minutes without accepting dialogs
+        timeout-minutes: 12
+        run: |
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' \
+            python3 scripts/clion_ui_startup_probe.py --timeout 600
+      - name: Save every outcome including blocking dialogs and startup logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clion-ui-startup-observation
+          path: |
+            build/gui-startup-probe/**
+            build/idea-sandbox/system-uiTest/log/**
+            build/idea-sandbox/system/log/**
+          if-no-files-found: warn
+          retention-days: 7

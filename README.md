@@ -60,3 +60,10 @@ python3 scripts/native_plugin_smoke.py --kit build
 ```
 
 此检查覆盖包内生成器与原生构建；CLion GUI 向导、打开项目和 CMake 自动关联仍需单独人工验证。
+
+独立的 CLion GUI startup probe workflow 使用官方
+[`runIdeForUiTests`](https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html#runideforuitests)
+及 [RemoteRobot](https://github.com/JetBrains/intellij-ui-test-robot) 客户端/服务器 0.11.23，
+在 Ubuntu Xvfb/Openbox 中只观察隔离 CLion 2023.3 的启动窗口，启动限时十分钟。
+Robot 仅绑定 loopback；保存组件树、屏幕截图、OCR 文字和日志。遇到协议、隐私或激活窗口会停止，
+不接受协议、不登录、不提供许可。启动成功仅证明 IDE 可被观察，不代表向导、构建或运行验收完成。

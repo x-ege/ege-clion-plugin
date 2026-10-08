@@ -8,6 +8,9 @@ version = project.findProperty("pluginVersion") as String? ?: "1.0.0"
 
 repositories {
     mavenCentral()
+    maven("https://packages.jetbrains.team/maven/p/ij/intellij-dependencies") {
+        content { includeGroup("com.intellij.remoterobot") }
+    }
 }
 
 dependencies {
@@ -131,4 +134,30 @@ tasks.register<Sync>("stageNativeSmokeRuntime") {
             it.name.matches(Regex("kotlin-stdlib-[0-9].*\\.jar"))
         }
     })
+}
+
+// A separate, observation-only GUI startup probe; no changes to native CI/tests.
+val robotVersion = "0.11.23"
+val guiProbe by sourceSets.creating
+dependencies {
+    add(guiProbe.implementationConfigurationName, "com.intellij.remoterobot:remote-robot:$robotVersion")
+}
+tasks.downloadRobotServerPlugin { version.set(robotVersion) }
+tasks.runIdeForUiTests {
+    systemProperty("robot-server.port", "8082")
+    systemProperty("robot-server.host.public", "false")
+    systemProperty("idea.is.internal", "false")
+    autoReloadPlugins.set(false)
+    systemDir.set(layout.buildDirectory.dir("idea-sandbox/system-uiTest").map { it.asFile })
+}
+val guiProbeJar by tasks.registering(Jar::class) {
+    dependsOn(tasks.named(guiProbe.classesTaskName))
+    archiveFileName.set("gui-startup-observer.jar")
+    from(guiProbe.output)
+}
+tasks.register<Sync>("stageGuiProbeRuntime") {
+    dependsOn(guiProbeJar)
+    into(layout.buildDirectory.dir("gui-probe-runtime"))
+    from(guiProbeJar)
+    from(provider { guiProbe.runtimeClasspath.files.filter { it.extension == "jar" } })
 }
