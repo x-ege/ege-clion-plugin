@@ -19,6 +19,8 @@ AUTHORIZATION_PREFIX = 'ege14-'
 EXPIRES = datetime(2026, 10, 9, tzinfo=timezone.utc)
 AGREEMENT_SHA256 = '2653cfd53ae4dc1100ba9cddbbc030ef19bd54f22031862eef9c4c15c58d9891'
 TITLE = 'CLion User Agreement'
+TELEMETRY_TITLE = 'Data Sharing'
+TELEMETRY_BODY_SHA256 = '40b4002317c89d205f29160ab089f9b879ac9a75da9c7a7e13aa2adca7154cbe'
 
 
 def check_authorization(reference, env, now=None):
@@ -124,6 +126,27 @@ def checked_box(data):
                for y in range(3, 13) for x in range(3, 13)) >= 5
 
 
+def telemetry_decline_button(image, ocr):
+    width, height, data = image
+    # Exact pixels of the audited optional telemetry description, excluding button hover states.
+    # Any new text, terms, size, or appearance must stop before input is sent.
+    if (width, height) != (598, 435) or hashlib.sha256(data[:width*(height-60)*3]).hexdigest() != TELEMETRY_BODY_SHA256:
+        raise RuntimeError('Data Sharing content differs from the audited optional statistics prompt')
+    candidates = []
+    for first in ocr:
+        if first['text'] != "Don't" or float(first['conf']) < 85:
+            continue
+        x, y, w, h = box(first)
+        for second in ocr:
+            sx, sy, sw, sh = box(second)
+            if (second['text'] == 'Send' and float(second['conf']) >= 85
+                    and 0 <= sx-(x+w) <= 12 and abs(sy-y) <= 3 and y > height-60):
+                candidates.append(first)
+    if len(candidates) != 1:
+        raise RuntimeError("Cannot uniquely locate Don't Send in the actual telemetry dialog")
+    return candidates[0]
+
+
 class AgreementUI:
     def __init__(self, root, output, env, reference):
         check_authorization(reference, env)
@@ -132,6 +155,7 @@ class AgreementUI:
         self.output = output
         self.env = env
         self.attempted = False
+        self.telemetry_attempted = False
         self.clicks = 0
         fixture = root / 'tests/fixtures/clion-ui/user-agreement-1.4.png'
         if hashlib.sha256(fixture.read_bytes()).hexdigest() != '7975e25994d9974278be94e4dec47c8d22b06fd96ff9eaea15d575d3f3318c19':
@@ -151,14 +175,17 @@ class AgreementUI:
                        check=True, env=self.env, timeout=5)
         return path
 
-    def click_word(self, window_id, word, label):
+    def click_word(self, window_id, word, label, expected_title=TITLE):
         title = subprocess.check_output(['xdotool', 'getwindowname', window_id],
                                         env=self.env, text=True, timeout=5).strip()
-        if title != TITLE:
+        if title != expected_title:
             raise RuntimeError('Window changed before authorized click')
         x, y, width, height = box(word)
         subprocess.run(['xdotool', 'windowactivate', '--sync', window_id],
                        env=self.env, check=True, timeout=5)
+        if subprocess.check_output(['xdotool', 'getwindowname', window_id],
+                                   env=self.env, text=True, timeout=5).strip() != expected_title:
+            raise RuntimeError('Window changed during activation before authorized click')
         self.record('click_attempt', target=label, window_id=window_id,
                     x=x+width//2, y=y+height//2)
         self.clicks += 1
@@ -190,3 +217,16 @@ class AgreementUI:
                 self.record('agreement_continue_clicked')
                 return
         raise RuntimeError('Checkbox checkmark/enabled Continue could not be verified; no further action')
+
+    def decline_telemetry(self, windows):
+        if (not self.attempted or self.telemetry_attempted or len(windows) != 1
+                or windows[0]['title'] != TELEMETRY_TITLE):
+            raise RuntimeError('Optional telemetry refusal requires the approved test and one exact dialog')
+        self.telemetry_attempted = True
+        window_id = windows[0]['id']
+        before = self.capture(window_id, 'data-sharing-before.png')
+        target = telemetry_decline_button(pixels(before), words(before))
+        self.record('optional_telemetry_prompt_verified', body_sha256=TELEMETRY_BODY_SHA256,
+                    default_policy='decline')
+        self.click_word(window_id, target, "Don't Send", TELEMETRY_TITLE)
+        self.record('telemetry_dont_send_clicked')

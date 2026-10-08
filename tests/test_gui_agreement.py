@@ -67,6 +67,24 @@ class AgreementAuthorizationTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 agreement.unchecked_box(agreement.pixels(image), label, bytes(len(template)))
 
+    @unittest.skipUnless(shutil.which('convert') and shutil.which('tesseract'), 'Needs CI OCR tools')
+    def test_only_audited_optional_telemetry_can_be_declined(self):
+        original = ROOT / 'tests/fixtures/clion-ui/data-sharing.png'
+        image = agreement.pixels(original)
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            screenshot = Path(directory) / 'sharing.png'
+            shutil.copyfile(original, screenshot)
+            ocr = agreement.words(screenshot)
+        target = agreement.telemetry_decline_button(image, ocr)
+        self.assertEqual(target['text'], "Don't")
+        # New text or altered prompt pixels must fail closed before any input.
+        width, height, data = image
+        changed = bytes([data[0] ^ 1]) + data[1:]
+        with self.assertRaises(RuntimeError):
+            agreement.telemetry_decline_button((width, height, changed), ocr)
+        with self.assertRaises(RuntimeError):
+            agreement.telemetry_decline_button(image, [w for w in ocr if w['text'] != "Don't"])
+
 
 if __name__ == '__main__':
     unittest.main()
