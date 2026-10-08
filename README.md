@@ -1,221 +1,60 @@
-# XEGE Creator
+# Xege Creator for CLion
 
-[![CI](https://github.com/x-ege/ege-clion-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/x-ege/ege-clion-plugin/actions/workflows/ci.yml)
-[![Release](https://github.com/x-ege/ege-clion-plugin/actions/workflows/release.yml/badge.svg)](https://github.com/x-ege/ege-clion-plugin/actions/workflows/release.yml)
-[![JetBrains Plugin](https://img.shields.io/jetbrains/plugin/v/28785-xege-creator.svg)](https://plugins.jetbrains.com/plugin/28785-xege-creator)
-[![Downloads](https://img.shields.io/jetbrains/plugin/d/28785-xege-creator.svg)](https://plugins.jetbrains.com/plugin/28785-xege-creator)
+在 CLion 的新建项目向导中选择 **C++ → Xege (EGE)**，选择示例后创建项目。
+插件保留菜单新建项目与“Setup as EGE Project”转换入口，支持 CLion 2023.3 及以上。
 
-一个用于 JetBrains CLion 的 EGE C++ 图形库项目向导插件，帮助你快速创建和配置 EGE 图形程序项目。
+新项目包含 `CMakeLists.txt`、`ege-project.cmake`、示例 `main.cpp`、图片、相机示例支持文件，
+以及完整的 `ege/` 固定源码。选择 CLion 的原生工具链即可编译，无需 Wine 或 MinGW 交叉工具链。
+Windows 用户可选 MSVC 或原生 MinGW。
 
-🔗 **[JetBrains 插件商店](https://plugins.jetbrains.com/plugin/28785-xege-creator)**
+## 固定源码与原生构建
 
----
+插件现在在 Windows、macOS、Linux 上统一生成源码项目，不再携带预编译库。
+EGE 固定为 `09387a806e3d8cafde84bf0bd91b775d681b27ac`，ccap 固定为
+`d1876005be7e7cc0c370fadd05dbac6c658c4a17`。完整平台源码、CMake 模块和许可证随插件打包，
+生成项目的配置与编译不会下载依赖或自动运行 Git。
 
-## 📥 安装
+- Windows：支持 C++17 的 MSVC 或原生 MinGW，使用 GDI 后端。MSVC 需要 Visual Studio 2022/Build Tools 的“使用 C++ 的桌面开发”工作负载与 Windows SDK；CLion 选择对应 Visual Studio 工具链。CI 使用 `Visual Studio 17 2022`、x64。首次构建会编译 EGE/ccap，较旧预编译模式耗时更长；不再支持仅复制旧库而不编译依赖的模式。
+- macOS：Xcode Command Line Tools/AppleClang、CMake，使用系统 CoreGraphics/AppKit；最低目标版本 11.0。
+- Linux：C++17 工具链、CMake、pkg-config、Cairo/X11 开发包；运行窗口需要 X11 或 XWayland。
+  Debian/Ubuntu 的包为 `build-essential cmake ninja-build pkg-config libcairo2-dev libx11-dev`。
 
-### 方式一：从 JetBrains 插件商店安装（推荐）
+创建或转换项目会校验所有资源 SHA256，缺少或损坏资源会报告失败。转换会保留现有
+`main.cpp` 和 CMake 内容，在 CMake 末尾加入 `ege-project.cmake`，给已有可执行目标关联 EGE。
+现有 `ege` 目录或冲突支持文件不会被覆盖，请先备份并移开。图片同时位于项目根目录和目标输出目录，
+camera 示例包含辅助头文件及 macOS 相机用途声明。已由 CLion 管理的 CMake 项目会在刷新后重载；
+菜单新建项目仍通过 CLion 的 open/import 流程打开。
 
-1. 打开 CLion
-2. 进入 `Settings/Preferences → Plugins`
-3. 在 `Marketplace` 标签页搜索 "**XEGE Creator**"
-4. 点击 `Install` 安装
-5. 重启 CLion
+维护资源时从**独立、干净**的固定版本 checkout 更新，不能使用包含本机改动的工作副本：
 
-### 方式二：手动安装
-
-1. 从 [Releases](https://github.com/x-ege/ege-clion-plugin/releases) 页面下载最新的插件 ZIP 文件
-2. 打开 CLion，进入 `Settings/Preferences → Plugins`
-3. 点击齿轮图标 ⚙️ → `Install Plugin from Disk...`
-4. 选择下载的 ZIP 文件
-5. 重启 CLion
-
----
-
-## 🎯 功能特性
-
-### ✨ 一键创建 EGE 项目
-
-- 在 CLion 新建项目向导的 **C++** 分组中添加 **Xege (EGE)** 项目类型
-- 自动配置 CMake 构建系统
-- 包含可运行的示例代码（绘制彩色圆形）
-
-### 🔧 灵活的库使用方式
-
-- **预编译库模式**（默认）：使用预编译的静态库，编译速度快
-- **源码模式**：直接使用 EGE 源码，可查看和修改 EGE 内部实现
-
-### 🌍 完整的多平台支持
-
-- 包含 EGE 头文件和静态库
-- 支持 Windows（MinGW、MSVC）
-- 支持 macOS 和 Linux
-
-### 🌐 国际化支持
-
-- 支持中文和英文界面
-- 根据系统语言自动切换
-
----
-
-## 🚀 使用方法
-
-### 创建 EGE 项目
-
-1. 打开 CLion，点击 `File → New → Project...`
-2. 在左侧 **C++** 分组中选择 **Xege (EGE)**
-3. 配置项目选项：
-   - **项目名称和位置**：输入你的项目名称和保存路径
-   - **使用 EGE 源码**：勾选复选框 "直接使用 EGE 源码作为项目依赖"
-     - ✅ 不勾选（默认）：使用预编译的静态库（推荐，编译更快）
-     - ☑️ 勾选：使用 EGE 源码（可查看和修改源码）
-4. 点击 `Create` 创建项目
-
-### 找不到 Xege 项目类型？
-
-- 在 1.1.5 中，项目类型显示为 **Easy Graphics Engine**，位于左侧列表最下方的 **Other** 分组；需要向下滚动才能看到，容易因为名称与说明不一致而被忽略。
-- 新版本将入口统一为 **C++ → Xege (EGE)**，与插件名称和使用说明保持一致。
-- 也可以先打开一个项目，再使用 `Tools → EGE Options → Create EGE Project`（中文界面：`工具 → EGE 选项 → 创建 EGE 项目`），选择一个空目录创建项目。
-- 如果上述入口均未出现，请在 `Settings → Plugins → Installed` 中确认 **Xege Creator** 已启用，并在反馈中提供 CLion 版本、插件版本和 IDE 日志。
-
-### 编译和运行
-
-1. CLion 会自动加载 CMake 配置
-2. 在工具栏选择 `ege-demo` 目标
-3. 点击运行按钮 ▶️ 编译并运行
-4. 程序会打开一个图形窗口，显示彩色圆形动画
-
-### 生成的项目结构
-
-#### 使用预编译库（默认）
-
-```
-my-ege-project/
-├── CMakeLists.txt          # CMake 配置（链接静态库）
-├── main.cpp                # 示例程序
-└── ege/                    # EGE 库
-    ├── include/            # 头文件
-    └── lib/                # 预编译的静态库（支持多平台/编译器）
+```sh
+./update_ege_src.sh /path/to/pinned-xege-checkout
+python3 scripts/package_ege_source.py --check
+./gradlew test buildPlugin
 ```
 
-#### 使用源码
+打包会自动检查资源清单与内容，不允许加入预编译库。
 
-```
-my-ege-project/
-├── CMakeLists.txt          # CMake 配置（编译源码）
-├── main.cpp                # 示例程序
-└── ege/                    # EGE 源码
-    ├── CMakeLists.txt      # EGE 构建配置
-    ├── include/            # 头文件
-    ├── src/                # EGE 源代码
-    └── 3rdparty/           # 第三方依赖（zlib, libpng）
-```
+维护者构建时，Gradle IntelliJ Plugin 1.x 默认在非 CI 环境下载 IntelliJ Platform 源码，
+用于源码导航。若不需要，可在 `intellij` 配置中设置 `downloadSources.set(false)`；
+该选项不影响插件随附的 EGE/ccap 原生源码。
+参见 [官方 downloadSources 说明](https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html#downloadsources)。
 
----
+## 正式插件包的原生验证
 
-## 🛠️ 开发构建
+CI 只构建一次 `buildPlugin` ZIP，Linux/macOS/Windows 三个作业下载同一份产物。
+测试启动器从 ZIP 内的插件 JAR 调用实际 `EgeResourceCopier`，不会从工作树复制资源或另写生成器。
+新建相机示例与转换现有项目均在含空格路径配置、编译，检查原生 ELF/Mach-O/PE 格式、图片复制、
+已有 CMake plain 链接签名和用户文件保留。Linux 在 Xvfb 下运行独立的非交互图形测试，
+确认真实 X11 可见窗口、绘图及 PNG/JPEG 加载；运行限时 30 秒。macOS/Windows 仅编译，不宣称窗口运行已验证。
+失败输出最后 60 行日志，各平台完整日志与成功报告作为 CI artifact 保存。
 
-如果你想参与插件开发或从源码构建：
+本机复现（安装上述原生依赖，Java 17 与 Python 3；非 Windows 另需 Ninja）：
 
-### 环境要求
-
-- **JDK**: 17 或更高版本
-- **Gradle**: 8.x+
-- **开发 IDE**: IntelliJ IDEA
-
-### 构建命令
-
-```bash
-# 克隆项目
-git clone https://github.com/x-ege/ege-clion-plugin.git
-cd ege-jetbrains-plugin
-
-# 构建插件
-./gradlew buildPlugin
-
-# 运行测试
-./gradlew test
-
-# 启动调试 IDE（带插件）
-./gradlew runIde
+```sh
+./gradlew test buildPlugin stageNativeSmokeRuntime
+python3 scripts/native_plugin_smoke.py --kit build
+# Linux 额外安装 xvfb 与 xauth，并追加 --linux-window
 ```
 
-生成的插件位于 `build/distributions/` 目录。
-
-### 更新 EGE 库和源码
-
-项目提供了两个脚本用于更新内置的 EGE 库和源码：
-
-```bash
-# 更新预编译库（从 Jenkins 下载最新版本）
-./update_ege_lib.sh
-
-# 更新源代码（从本地 xege 仓库）
-./update_ege_src.sh /path/to/xege
-
-# 更新预编译库时跳过下载（使用已下载的文件）
-./update_ege_lib.sh --skip-download
-
-# 强制重新下载预编译库
-./update_ege_lib.sh --force-download
-```
-
----
-
-## 🧪 CI/CD
-
-本项目使用 GitHub Actions 进行持续集成和自动发布：
-
-- **CI Workflow**: 每次推送到 `master` 分支或创建 Pull Request 时，自动运行测试和构建
-- **Release Workflow**: 推送版本 tag（如 `1.0.1`）时，自动构建并发布到 GitHub Releases
-- **Version Check Workflow**: 在主干和 PR 上检查插件没有重新引入 `untilBuild` 上限
-
-### 🔧 版本管理任务
-
-插件提供了自动化的版本管理工具：
-
-```bash
-# 检查插件是否保持开放式兼容范围
-./gradlew checkClionVersion
-```
-
----
-
-## 📋 系统要求
-
-- **CLion**: 2023.3 或更高版本（不设置最高版本上限；最新验证到 2026.2）
-- **操作系统**: Windows, macOS, Linux
-- **编译器**:
-  - Windows: MinGW-w64 或 MSVC (2010-2022)
-  - macOS: Clang
-  - Linux: GCC
-
----
-
-## 📚 相关链接
-
-- 🏪 **[JetBrains 插件商店](https://plugins.jetbrains.com/plugin/28785-xege-creator)**
-- 📦 **[GitHub Releases](https://github.com/x-ege/ege-clion-plugin/releases)**
-- 🌐 **[EGE 官方网站](https://xege.org/)**
-- 💻 **[EGE 源码仓库](https://github.com/wysaid/xege)**
-
----
-
-## 📝 许可证
-
-本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
-
----
-
-## 👤 作者
-
-- **Author**: wysaid
-- **Email**: <this@xege.org>
-- **GitHub**: [@x-ege](https://github.com/x-ege)
-
----
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-如果这个插件对你有帮助，请在 [GitHub](https://github.com/x-ege/ege-clion-plugin) 给个 ⭐️ Star！
+此检查覆盖包内生成器与原生构建；CLion GUI 向导、打开项目和 CMake 自动关联仍需单独人工验证。

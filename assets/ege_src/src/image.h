@@ -1,8 +1,11 @@
 #pragma once
 
 #include "ege_head.h"
+#include "backend/interface/RenderTarget.h"
 
+#ifdef _WIN32
 #include <windows.h>
+#endif
 
 
 namespace ege
@@ -84,6 +87,16 @@ private:
 
 public:
     HDC     m_hDC;
+
+    RenderTarget* getNativeRenderTarget() const
+    {
+#ifdef _WIN32
+        // Windows 固定使用 GDI，避免把原生后端分支编译进 Windows 二进制。
+        return NULL;
+#else
+        return m_renderTarget;
+#endif
+    }
     HBITMAP m_hBmp;
     int     m_width;
     int     m_height;
@@ -106,6 +119,7 @@ private:
     void setdefaultattribute();
     int  deleteimage();
     void reset();
+    void syncBuffer() const;
 
 public:
     Bound            m_vpt;
@@ -132,16 +146,22 @@ public:
 
     void gentexture(bool gen);
 
+    bool isAntiAliasingEnabled() const noexcept { return m_aa; }
+
     HDC      getdc() const { return m_hDC; }
     int      getwidth() const { return m_width; }
     int      getheight() const { return m_height; }
-    color_t* getbuffer() const { return (color_t*)m_pBuffer; }
+    color_t*       getbuffer();
+    const color_t* getbuffer() const;
+    color_t*       getbuffer_for_write(int x, int y, int width, int height);
+    RenderTarget* getRenderTargetForSampling() const;
 #ifdef EGE_GDIPLUS
     // TODO: thread safe?
     Gdiplus::Graphics* getGraphics();
     Gdiplus::Pen*      getPen();
     Gdiplus::Brush*    getBrush();
     void               set_pattern(Gdiplus::Brush* brush);
+    void               syncGraphicsViewport(int oldLeft, int oldTop);
 #endif
     void enable_anti_alias(bool enable);
 
@@ -304,10 +324,23 @@ public:
         int                        alpha        = -1, // in range[0, 256], alpha== -1 means no alpha
         int                        smooth       = 0);
 
+    RenderTarget* m_renderTarget;  // 原生后端的渲染目标；传统 GDI 路径始终为空。
+
     friend graphics_errors getimage_from_png_struct(PIMAGE, void*, void*);
 };
 
+#ifndef EGE_GDIPLUS
+// Native enhanced-API state is stored outside IMAGE to keep the public ABI
+// stable. These hooks keep that state synchronized with IMAGE lifetime and
+// resize operations.
+bool updateNativeFallbackTexture(IMAGE* image, bool generate);
+void releaseNativeFallbackState(const IMAGE* image);
+void clearNativeFallbackPattern(IMAGE* image);
+#endif
+
+#ifdef EGE_GDIPLUS
 graphics_errors getimage_from_bitmap(PIMAGE pimg, Gdiplus::Bitmap& bitmap);
+#endif
 
 int savebmp(PCIMAGE pimg, FILE* file, bool alpha = false);
 

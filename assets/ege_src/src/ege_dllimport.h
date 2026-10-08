@@ -1,5 +1,6 @@
 #pragma once
 
+#ifdef _WIN32
 #include <windows.h>
 #include <windef.h>
 
@@ -38,3 +39,9 @@ namespace dll
     MMRESULT timeKillEvent(UINT uTimerID);
     MCIERROR mciSendCommandW(MCIDEVICEID mciId,UINT uMsg,DWORD_PTR dwParam1,DWORD_PTR dwParam2);
 }
+#else
+namespace dll {
+    inline void loadDllsIfNot() {}
+    inline void freeDlls() {}
+}
+#endif

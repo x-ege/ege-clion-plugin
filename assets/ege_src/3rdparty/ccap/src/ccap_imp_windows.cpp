@@ -16,6 +16,9 @@
 #endif
 
 #include "ccap_imp_windows.h"
+#ifdef CCAP_ENABLE_FILE_PLAYBACK
+#include "ccap_file_reader_windows.h"
+#endif
 
 #include "ccap_convert.h"
 #include "ccap_convert_frame.h"
@@ -34,8 +37,10 @@
 // Include initguid.h before our GUID definitions header so that DEFINE_GUID
 // actually defines the GUIDs (rather than just declaring them as extern).
 // This avoids the need to link against strmiids.lib.
+// clang-format off
 #include <initguid.h>
 #include "ccap_dshow_guids.h"
+// clang-format on
 
 /// @see <https://doxygen.reactos.org/d9/dce/structtagVIDEOINFOHEADER2.html>
 typedef struct tagVIDEOINFOHEADER2 {
@@ -128,12 +133,12 @@ PixelFormtInfo s_pixelInfoList[] = {
     { MEDIASUBTYPE_NV12, "NV12", PixelFormat::NV12 },
     { MEDIASUBTYPE_I420, "I420", PixelFormat::I420 },
     { MEDIASUBTYPE_IYUV, "IYUV (I420)", PixelFormat::I420 },
-    { MEDIASUBTYPE_YUY2, "YUY2", PixelFormat::Unknown },
+    { MEDIASUBTYPE_YUY2, "YUY2", PixelFormat::YUYV },
     { MEDIASUBTYPE_YV12, "YV12", PixelFormat::Unknown },
-    { MEDIASUBTYPE_UYVY, "UYVY", PixelFormat::Unknown },
+    { MEDIASUBTYPE_UYVY, "UYVY", PixelFormat::UYVY },
     { MEDIASUBTYPE_RGB565, "RGB565", PixelFormat::Unknown },
     { MEDIASUBTYPE_RGB555, "RGB555", PixelFormat::Unknown },
-    { MEDIASUBTYPE_YUYV, "YUYV", PixelFormat::Unknown },
+    { MEDIASUBTYPE_YUYV, "YUYV", PixelFormat::YUYV },
     { MEDIASUBTYPE_YVYU, "YVYU", PixelFormat::Unknown },
     { MEDIASUBTYPE_YVU9, "YVU9", PixelFormat::Unknown },
     { MEDIASUBTYPE_Y411, "Y411", PixelFormat::Unknown },
@@ -225,8 +230,8 @@ bool inplaceConvertFrameYUV2YUV(VideoFrame* frame, PixelFormat toFormat, bool ve
     bool isInputI420 = pixelFormatInclude(frame->pixelFormat, PixelFormat::I420);
     bool isOutputI420 = pixelFormatInclude(toFormat, PixelFormat::I420);
 
-    assert(!(isInputNV12 && isOutputNV12)); // 相同类型不应该进来
-    assert(!(isInputI420 && isOutputI420)); // 相同类型不应该进来
+    assert(!(isInputNV12 && isOutputNV12)); // Same type should not come here
+    assert(!(isInputI420 && isOutputI420)); // Same type should not come here
     uint8_t* inputData0 = frame->data[0];
     uint8_t* inputData1 = frame->data[1];
     uint8_t* inputData2 = frame->data[2];
@@ -236,7 +241,7 @@ bool inplaceConvertFrameYUV2YUV(VideoFrame* frame, PixelFormat toFormat, bool ve
     int width = frame->width;
     int height = verticalFlip ? -frame->height : frame->height;
 
-    // NV12/I420 都是 YUV420P 格式
+    // NV12/I420 are both YUV420P format
     frame->allocator->resize(stride0 * frame->height + (stride1 + stride2) * frame->height / 2);
     frame->data[0] = frame->allocator->data();
 
@@ -399,6 +404,12 @@ std::vector<std::string> ProviderDirectShow::findDeviceNames() {
     }
 
     enumerateDevices([&](IMoniker* moniker, std::string_view name) {
+#ifdef CCAP_WIN_NO_DEVICE_VERIFY
+        // Skip device verification to avoid crashes from buggy camera drivers
+        // Device properties are already verified in enumerateDevices()
+        m_allDeviceNames.emplace_back(name.data(), name.size());
+        CCAP_LOG_I("ccap: \"%s\" added without verification (CCAP_WIN_NO_DEVICE_VERIFY enabled)\n", name.data());
+#else
         // Try to bind device, check if available
         IBaseFilter* filter = nullptr;
         HRESULT hr = moniker->BindToObject(0, 0, IID_IBaseFilter, (void**)&filter);
@@ -408,6 +419,7 @@ std::vector<std::string> ProviderDirectShow::findDeviceNames() {
         } else {
             CCAP_LOG_I("ccap: \"%s\" is not a valid video capture device, removed\n", name.data());
         }
+#endif
         // Unavailable devices are not added to the list
         return false; // Continue enumeration
     });
@@ -565,7 +577,7 @@ bool ProviderDirectShow::createStream() {
             VIDEOINFOHEADER* videoHeader = (VIDEOINFOHEADER*)mediaType->pbFormat;
             m_frameProp.width = videoHeader->bmiHeader.biWidth;
             m_frameProp.height = videoHeader->bmiHeader.biHeight;
-            m_frameProp.fps = 10000000.0 / videoHeader->AvgTimePerFrame;
+            m_frameProp.fps = videoHeader->AvgTimePerFrame != 0 ? 10000000.0 / videoHeader->AvgTimePerFrame : 0;
             auto pixFormatInfo = findPixelFormatInfo(mediaType->subtype);
             auto subtype = mediaType->subtype;
 
@@ -650,12 +662,51 @@ bool ProviderDirectShow::createStream() {
     return true;
 }
 
-bool ProviderDirectShow::open(std::string_view deviceName) {
-    if (m_isOpened && m_mediaControl) {
-        reportError(ErrorCode::DeviceOpenFailed, "Camera already opened, please close it first");
+bool ProviderDirectShow::open(std::string_view deviceNameOrFilePath) {
+#ifdef CCAP_ENABLE_FILE_PLAYBACK
+    // Check if this looks like a file path
+    if (looksLikeFilePath(deviceNameOrFilePath)) {
+        return openFile(deviceNameOrFilePath);
+    }
+#endif
+    return openCamera(deviceNameOrFilePath);
+}
+
+bool ProviderDirectShow::openFile(std::string_view filePath) {
+#ifndef CCAP_ENABLE_FILE_PLAYBACK
+    CCAP_LOG_E("File playback support is disabled. Rebuild with CCAP_ENABLE_FILE_PLAYBACK=ON to enable this feature.\n");
+    return false;
+#else
+    if (m_isOpened || m_fileReader) {
+        reportError(ErrorCode::DeviceOpenFailed, "Camera or file already opened, please close it first");
         return false;
     }
 
+    m_isFileMode = true;
+    m_fileReader = std::make_unique<FileReaderWindows>(this);
+
+    if (!m_fileReader->open(filePath)) {
+        m_fileReader.reset();
+        m_isFileMode = false;
+        return false;
+    }
+
+    m_isOpened = true;
+    return true;
+#endif // CCAP_ENABLE_FILE_PLAYBACK
+}
+
+bool ProviderDirectShow::openCamera(std::string_view deviceName) {
+    if (m_isOpened || m_mediaControl
+#ifdef CCAP_ENABLE_FILE_PLAYBACK
+        || m_fileReader
+#endif
+    ) {
+        reportError(ErrorCode::DeviceOpenFailed, "Camera or file already opened, please close it first");
+        return false;
+    }
+
+    m_isFileMode = false;
     bool found = false;
 
     enumerateDevices([&](IMoniker* moniker, std::string_view name) {
@@ -720,6 +771,7 @@ bool ProviderDirectShow::open(std::string_view deviceName) {
     m_isOpened = true;
     m_isRunning = false;
     m_frameIndex = 0;
+    m_firstFrameArrived = false;
     return true;
 }
 
@@ -750,9 +802,27 @@ HRESULT STDMETHODCALLTYPE ProviderDirectShow::SampleCB(double sampleTime, IMedia
         if (SUCCEEDED(hr)) {
             VIDEOINFOHEADER* vih = (VIDEOINFOHEADER*)mt.pbFormat;
             m_frameProp.width = vih->bmiHeader.biWidth;
-            m_frameProp.height = vih->bmiHeader.biHeight;
-            m_frameProp.fps = 10000000.0 / vih->AvgTimePerFrame;
+            // biHeight may be negative. Negative height indicates top-to-bottom orientation.
+            // Positive height indicates bottom-to-top orientation (standard Windows DIB format).
+            m_frameProp.height = abs(vih->bmiHeader.biHeight);
+
+            // For YUV formats, always assume TopToBottom orientation regardless of biHeight
+            // This fixes issues with some virtual cameras (like OBS) that report positive biHeight
+            // but actually deliver TopToBottom data
             auto info = findPixelFormatInfo(mt.subtype);
+            bool isYUVFormat = (info.pixelFormat & kPixelFormatYUVColorBit) != 0;
+
+            if (isYUVFormat) {
+                // YUV data is typically TopToBottom, ignore biHeight sign
+                m_inputOrientation = FrameOrientation::TopToBottom;
+                CCAP_LOG_V("ccap: YUV format detected, using TopToBottom orientation (biHeight=%d)\n", vih->bmiHeader.biHeight);
+            } else if (vih->bmiHeader.biHeight < 0) {
+                m_inputOrientation = FrameOrientation::TopToBottom;
+            } else {
+                m_inputOrientation = FrameOrientation::BottomToTop;
+            }
+
+            m_frameProp.fps = vih->AvgTimePerFrame != 0 ? 10000000.0 / vih->AvgTimePerFrame : 0;
             if (info.pixelFormat != PixelFormat::Unknown) {
                 m_frameProp.cameraPixelFormat = info.pixelFormat;
             }
@@ -773,40 +843,55 @@ HRESULT STDMETHODCALLTYPE ProviderDirectShow::SampleCB(double sampleTime, IMedia
 
     uint32_t bufferLen = mediaSample->GetActualDataLength();
     bool isInputYUV = (m_frameProp.cameraPixelFormat & kPixelFormatYUVColorBit);
-    bool isOutputYUV = (m_frameProp.outputPixelFormat & kPixelFormatYUVColorBit);
-    auto inputOrientation = isInputYUV ? FrameOrientation::TopToBottom : FrameOrientation::BottomToTop;
+    PixelFormat effectiveOutputFormat = (m_frameProp.outputPixelFormat == PixelFormat::Unknown) ? m_frameProp.cameraPixelFormat : m_frameProp.outputPixelFormat;
+    bool isOutputYUV = (effectiveOutputFormat & kPixelFormatYUVColorBit);
 
     newFrame->pixelFormat = m_frameProp.cameraPixelFormat;
     newFrame->width = m_frameProp.width;
     newFrame->height = m_frameProp.height;
     newFrame->orientation = isOutputYUV ? FrameOrientation::TopToBottom : m_frameOrientation;
-    newFrame->nativeHandle = mediaSample;
+    newFrame->nativeHandle = nullptr;
 
-    bool shouldFlip = newFrame->orientation != inputOrientation && !isOutputYUV;
-    bool shouldConvert = m_frameProp.cameraPixelFormat != m_frameProp.outputPixelFormat;
+    bool shouldFlip = newFrame->orientation != m_inputOrientation && !isOutputYUV;
+    bool shouldConvert = m_frameProp.cameraPixelFormat != effectiveOutputFormat;
     bool zeroCopy = !shouldConvert && !shouldFlip;
 
     if (isInputYUV) {
+        bool isPackedYUV = pixelFormatInclude(m_frameProp.cameraPixelFormat, PixelFormat::YUYV) ||
+            pixelFormatInclude(m_frameProp.cameraPixelFormat, PixelFormat::UYVY);
+
         // Zero-copy, directly reference sample data
         newFrame->data[0] = sampleData;
-        newFrame->data[1] = sampleData + m_frameProp.width * m_frameProp.height;
 
-        newFrame->stride[0] = m_frameProp.width;
-
-        if (pixelFormatInclude(m_frameProp.cameraPixelFormat, PixelFormat::I420)) {
-            newFrame->stride[1] = m_frameProp.width / 2;
-            newFrame->stride[2] = m_frameProp.width / 2;
-
-            newFrame->data[2] = sampleData + m_frameProp.width * m_frameProp.height * 5 / 4;
-        } else {
-            newFrame->stride[1] = m_frameProp.width;
+        if (isPackedYUV) {
+            // YUYV/UYVY are packed formats: single plane, 2 bytes per pixel
+            newFrame->stride[0] = m_frameProp.width * 2;
+            newFrame->stride[1] = 0;
             newFrame->stride[2] = 0;
+            newFrame->data[1] = nullptr;
             newFrame->data[2] = nullptr;
-        }
 
-        assert(newFrame->stride[0] * newFrame->height + newFrame->stride[1] * newFrame->height / 2 +
-                   newFrame->stride[2] * newFrame->height / 2 <=
-               bufferLen);
+            assert(newFrame->stride[0] * newFrame->height <= bufferLen);
+        } else {
+            // Planar YUV formats (NV12/I420)
+            newFrame->data[1] = sampleData + m_frameProp.width * m_frameProp.height;
+            newFrame->stride[0] = m_frameProp.width;
+
+            if (pixelFormatInclude(m_frameProp.cameraPixelFormat, PixelFormat::I420)) {
+                newFrame->stride[1] = m_frameProp.width / 2;
+                newFrame->stride[2] = m_frameProp.width / 2;
+
+                newFrame->data[2] = sampleData + m_frameProp.width * m_frameProp.height * 5 / 4;
+            } else {
+                newFrame->stride[1] = m_frameProp.width;
+                newFrame->stride[2] = 0;
+                newFrame->data[2] = nullptr;
+            }
+
+            assert(newFrame->stride[0] * newFrame->height + newFrame->stride[1] * newFrame->height / 2 +
+                       newFrame->stride[2] * newFrame->height / 2 <=
+                   bufferLen);
+        }
     } else {
         auto stride = m_frameProp.width * (m_frameProp.cameraPixelFormat & kPixelFormatAlphaColorBit ? 4 : 3);
         newFrame->stride[0] = ((stride + 3) / 4) * 4; // 4-byte aligned
@@ -836,7 +921,7 @@ HRESULT STDMETHODCALLTYPE ProviderDirectShow::SampleCB(double sampleTime, IMedia
 
             std::chrono::steady_clock::time_point startTime = std::chrono::steady_clock::now();
 
-            zeroCopy = !inplaceConvertFrame(newFrame.get(), m_frameProp.outputPixelFormat, shouldFlip);
+            zeroCopy = !inplaceConvertFrame(newFrame.get(), effectiveOutputFormat, shouldFlip);
 
             double durInMs = (std::chrono::steady_clock::now() - startTime).count() / 1.e6;
             static double s_allCostTime = 0;
@@ -852,10 +937,10 @@ HRESULT STDMETHODCALLTYPE ProviderDirectShow::SampleCB(double sampleTime, IMedia
 
             CCAP_LOG_V(
                 "ccap: inplaceConvertFrame requested pixel format: %s, actual pixel format: %s, flip: %s, cost time %s: (cur %g ms, avg %g ms)\n",
-                pixelFormatToString(m_frameProp.outputPixelFormat).data(), pixelFormatToString(m_frameProp.cameraPixelFormat).data(),
+                pixelFormatToString(effectiveOutputFormat).data(), pixelFormatToString(m_frameProp.cameraPixelFormat).data(),
                 shouldFlip ? "YES" : "NO", mode, durInMs, s_allCostTime / s_frames);
         } else {
-            zeroCopy = !inplaceConvertFrame(newFrame.get(), m_frameProp.outputPixelFormat, shouldFlip);
+            zeroCopy = !inplaceConvertFrame(newFrame.get(), effectiveOutputFormat, shouldFlip);
         }
 
         newFrame->sizeInBytes = newFrame->stride[0] * newFrame->height + (newFrame->stride[1] + newFrame->stride[2]) * newFrame->height / 2;
@@ -865,6 +950,7 @@ HRESULT STDMETHODCALLTYPE ProviderDirectShow::SampleCB(double sampleTime, IMedia
         // Conversion may fail. If conversion fails, fall back to zero-copy mode.
         // In this case, the returned format is the original camera input format.
         newFrame->sizeInBytes = bufferLen;
+        newFrame->nativeHandle = mediaSample;
 
         mediaSample->AddRef(); // Ensure data lifecycle
         auto manager = std::make_shared<FakeFrame>([newFrame, mediaSample]() mutable {
@@ -917,7 +1003,7 @@ HRESULT STDMETHODCALLTYPE ProviderDirectShow::BufferCB(double SampleTime, BYTE* 
     return S_OK;
 }
 
-HRESULT STDMETHODCALLTYPE ProviderDirectShow::QueryInterface(REFIID riid, _COM_Outptr_ void __RPC_FAR* __RPC_FAR* ppvObject) {
+HRESULT STDMETHODCALLTYPE ProviderDirectShow::QueryInterface(REFIID riid, _COM_Outptr_ void __RPC_FAR * __RPC_FAR * ppvObject) {
     static constexpr const IID IID_ISampleGrabberCB = { 0x0579154A, 0x2B53, 0x4994, { 0xB0, 0xD0, 0xE7, 0x73, 0x14, 0x8E, 0xFF, 0x85 } };
 
     if (riid == IID_IUnknown) {
@@ -941,9 +1027,36 @@ ULONG STDMETHODCALLTYPE ProviderDirectShow::Release() { // same as AddRef
     return S_OK;
 }
 
-bool ProviderDirectShow::isOpened() const { return m_isOpened; }
+bool ProviderDirectShow::isOpened() const {
+#ifdef CCAP_ENABLE_FILE_PLAYBACK
+    if (m_isFileMode && m_fileReader) {
+        return m_fileReader->isOpened();
+    }
+#endif
+    return m_isOpened;
+}
 
 std::optional<DeviceInfo> ProviderDirectShow::getDeviceInfo() const {
+    // For file mode, return basic info
+#ifdef CCAP_ENABLE_FILE_PLAYBACK
+    if (m_isFileMode && m_fileReader) {
+#else
+    if (m_isFileMode) {
+#endif
+        std::optional<DeviceInfo> info;
+        info.emplace();
+        info->deviceName = "Video File";
+        info->supportedPixelFormats.push_back(PixelFormat::BGR24);
+        info->supportedPixelFormats.push_back(PixelFormat::BGRA32);
+        info->supportedPixelFormats.push_back(PixelFormat::NV12);
+#ifdef CCAP_ENABLE_FILE_PLAYBACK
+        if (m_fileReader) {
+            info->supportedResolutions.push_back({ (uint32_t)m_fileReader->getWidth(), (uint32_t)m_fileReader->getHeight() });
+        }
+#endif
+        return info;
+    }
+
     std::optional<DeviceInfo> info;
     bool hasMJPG = false;
 
@@ -1030,14 +1143,39 @@ void ProviderDirectShow::close() {
         m_graph->Release();
         m_graph = nullptr;
     }
+
+    // Close file reader if present
+#ifdef CCAP_ENABLE_FILE_PLAYBACK
+    if (m_fileReader) {
+        m_fileReader->close();
+        m_fileReader.reset();
+    }
+#endif
+
+    // Clear any pending frames from the queue
+    {
+        std::lock_guard<std::mutex> lock(m_availableFrameMutex);
+        m_availableFrames = {};
+    }
+
     m_isOpened = false;
     m_isRunning = false;
+    m_isFileMode = false;
 
     CCAP_LOG_V("ccap: Camera closed.\n");
 }
 
 bool ProviderDirectShow::start() {
     if (!m_isOpened) return false;
+
+    // File mode
+#ifdef CCAP_ENABLE_FILE_PLAYBACK
+    if (m_isFileMode && m_fileReader) {
+        return m_fileReader->start();
+    }
+#endif
+
+    // Camera mode
     if (!m_isRunning && m_mediaControl) {
         HRESULT hr = m_mediaControl->Run();
         m_isRunning = !FAILED(hr);
@@ -1053,11 +1191,19 @@ bool ProviderDirectShow::start() {
 void ProviderDirectShow::stop() {
     CCAP_LOG_V("ccap: ProviderDirectShow stop called\n");
 
+    // File mode
+#ifdef CCAP_ENABLE_FILE_PLAYBACK
+    if (m_isFileMode && m_fileReader) {
+        m_fileReader->stop();
+        return;
+    }
+#endif
+
     if (m_grabFrameWaiting) {
         CCAP_LOG_V("ccap: VideoFrame waiting stopped\n");
 
         m_grabFrameWaiting = false;
-        m_frameCondition.notify_all();
+        notifyGrabWaiters();
     }
 
     if (m_isRunning && m_mediaControl) {
@@ -1068,7 +1214,62 @@ void ProviderDirectShow::stop() {
     }
 }
 
-bool ProviderDirectShow::isStarted() const { return m_isRunning && m_mediaControl; }
+bool ProviderDirectShow::isStarted() const {
+#ifdef CCAP_ENABLE_FILE_PLAYBACK
+    if (m_isFileMode && m_fileReader) {
+        return m_fileReader->isStarted();
+    }
+#endif
+    return m_isRunning && m_mediaControl;
+}
+
+bool ProviderDirectShow::setFileProperty(PropertyName prop, double value) {
+#ifndef CCAP_ENABLE_FILE_PLAYBACK
+    CCAP_LOG_E("File playback support is disabled.\n");
+    return false;
+#else
+    if (!m_isFileMode || !m_fileReader) {
+        return false;
+    }
+
+    switch (prop) {
+    case PropertyName::CurrentTime:
+        return m_fileReader->seekToTime(value);
+    case PropertyName::PlaybackSpeed:
+        return m_fileReader->setPlaybackSpeed(value);
+    case PropertyName::CurrentFrameIndex:
+        return m_fileReader->seekToFrame(static_cast<int64_t>(value));
+    default:
+        return false;
+    }
+#endif // CCAP_ENABLE_FILE_PLAYBACK
+}
+
+double ProviderDirectShow::getFileProperty(PropertyName prop) const {
+#ifndef CCAP_ENABLE_FILE_PLAYBACK
+    CCAP_LOG_E("File playback support is disabled.\n");
+    return NAN;
+#else
+    if (!m_isFileMode || !m_fileReader) {
+        return NAN;
+    }
+
+    switch (prop) {
+    case PropertyName::Duration:
+        return m_fileReader->getDuration();
+    case PropertyName::CurrentTime:
+        return m_fileReader->getCurrentTime();
+    case PropertyName::PlaybackSpeed:
+        return m_fileReader->getPlaybackSpeed();
+    case PropertyName::FrameCount:
+        return m_fileReader->getFrameCount();
+    case PropertyName::CurrentFrameIndex:
+        return m_fileReader->getCurrentFrameIndex();
+    default:
+        return NAN;
+    }
+#endif // CCAP_ENABLE_FILE_PLAYBACK
+}
 
 ProviderImp* createProviderDirectShow() { return new ProviderDirectShow(); }
 

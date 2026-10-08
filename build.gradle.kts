@@ -102,3 +102,28 @@ tasks.register("checkClionVersion") {
         println("✓ 未设置 untilBuild；插件不会因 IDE 主版本升级而被元数据阻止安装")
     }
 }
+
+// Fail before compiling if resources are stale, incomplete, or contain precompiled binaries.
+val verifyBundledAssets by tasks.registering(Exec::class) {
+    commandLine("python3", "scripts/package_ege_source.py", "--check")
+}
+tasks.processResources { dependsOn(verifyBundledAssets) }
+
+// A tiny test launcher, without unpacked plugin classes/resources, exercises the ZIP in CI.
+val nativeSmokeTool by tasks.registering(Jar::class) {
+    dependsOn(tasks.testClasses)
+    archiveFileName.set("native-smoke-tool.jar")
+    from(sourceSets.test.get().output) {
+        include("org/xege/project/EgeNativeSmokeTool*.class")
+    }
+}
+tasks.register<Sync>("stageNativeSmokeRuntime") {
+    dependsOn(nativeSmokeTool)
+    into(layout.buildDirectory.dir("native-smoke-runtime"))
+    from(nativeSmokeTool)
+    from(provider {
+        configurations.testRuntimeClasspath.get().filter {
+            it.name.matches(Regex("kotlin-stdlib-[0-9].*\\.jar"))
+        }
+    })
+}

@@ -75,7 +75,7 @@ class CreateEgeProjectAction : AnAction() {
         }
 
         val settings = dialog.settings
-        logger.info("Project settings: useSourceCode=${settings.useSourceCode}, demo=${settings.demoOption}")
+        logger.info("Project settings: demo=${settings.demoOption}")
 
         // 创建项目
         createEgeProject(projectPath, settings)
@@ -111,15 +111,7 @@ class CreateEgeProjectAction : AnAction() {
                     val targetDir = File(projectPath)
                     targetDir.mkdirs()
 
-                    // 复制 CMake 模板文件
-                    indicator.fraction = 0.2
-                    indicator.text = XegeBundle.message("create.task.cmake")
-                    ResourceCopyHelper.copyCMakeTemplateFiles(targetDir, settings.useSourceCode, settings.demoOption.fileName)
-
-                    // 复制 EGE 库文件
-                    indicator.fraction = 0.5
-                    indicator.text = XegeBundle.message("create.task.library")
-                    ResourceCopyHelper.copyEgeLibrary(targetDir, settings.useSourceCode, indicator)
+                    ResourceCopyHelper.generateProject(targetDir, settings.demoOption.fileName, indicator)
 
                     indicator.fraction = 0.9
                     indicator.text = XegeBundle.message("create.task.finalizing")

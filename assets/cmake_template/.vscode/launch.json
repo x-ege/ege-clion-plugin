@@ -1,52 +1,20 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Launch Debug",
-            "type": "cppvsdbg",
+            "name": "Launch EGE",
+            "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/Debug/ege-demo.exe",
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/build",
-            "environment": [],
-            "console": "integratedTerminal",
-            "preLaunchTask": "Run Project (Debug)",
-
+            "program": "${command:cmake.launchTargetPath}",
+            "cwd": "${workspaceFolder}",
+            "args": [],
+            "MIMode": "gdb",
             "osx": {
-                "program": "/bin/bash",
-                "args": [
-                    "-c",
-                    "echo Run ${workspaceFolder}/build/ege-demo.exe done."
-                ],
+                "MIMode": "lldb"
             },
             "windows": {
-                "preLaunchTask": "Build Project (Debug)"
-            },
-        },
-        {
-            "name": "Launch Release",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/build/Release/ege-demo.exe",
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/build",
-            "environment": [],
-            "console": "integratedTerminal",
-            "preLaunchTask": "Run Project (Release)",
-
-            "osx": {
-                "program": "/bin/bash",
-                "args": [
-                    "-c",
-                    "echo Run ${workspaceFolder}/build/ege-demo.exe done."
-                ],
-            },
-            "windows": {
-                "preLaunchTask": "Build Project (Release)"
-            },
+                "type": "cppvsdbg"
+            }
         }
     ]
 }
