@@ -21,6 +21,7 @@ AGREEMENT_SHA256 = '2653cfd53ae4dc1100ba9cddbbc030ef19bd54f22031862eef9c4c15c58d
 TITLE = 'CLion User Agreement'
 TELEMETRY_TITLE = 'Data Sharing'
 TELEMETRY_BODY_SHA256 = '40b4002317c89d205f29160ab089f9b879ac9a75da9c7a7e13aa2adca7154cbe'
+LICENSES_PIXELS_SHA256 = 'f3dbeaee6093ce504f8059e9536e370fa7d34f24dd72a54f031c97b6d07bb959'
 
 
 def check_authorization(reference, env, now=None):
@@ -147,6 +148,25 @@ def telemetry_decline_button(image, ocr):
     return candidates[0]
 
 
+def trial_option(image, ocr):
+    width, height, data = image
+    if (width, height) != (814, 455) or hashlib.sha256(data).hexdigest() != LICENSES_PIXELS_SHA256:
+        raise RuntimeError('License window differs from the audited unactivated CLion trial selector')
+    candidates = []
+    for first in ocr:
+        if first['text'] != 'Start' or float(first['conf']) < 90:
+            continue
+        x, y, w, h = box(first)
+        for second in ocr:
+            sx, sy, sw, sh = box(second)
+            if (second['text'] == 'trial' and float(second['conf']) >= 90
+                    and 0 <= sx-(x+w) <= 12 and abs(sy-y) <= 3 and y < 50):
+                candidates.append(first)
+    if len(candidates) != 1:
+        raise RuntimeError('Cannot uniquely identify the Start trial option in the actual license window')
+    return candidates[0]
+
+
 class AgreementUI:
     def __init__(self, root, output, env, reference):
         check_authorization(reference, env)
@@ -156,6 +176,7 @@ class AgreementUI:
         self.env = env
         self.attempted = False
         self.telemetry_attempted = False
+        self.trial_option_attempted = False
         self.clicks = 0
         fixture = root / 'tests/fixtures/clion-ui/user-agreement-1.4.png'
         if hashlib.sha256(fixture.read_bytes()).hexdigest() != '7975e25994d9974278be94e4dec47c8d22b06fd96ff9eaea15d575d3f3318c19':
@@ -230,3 +251,21 @@ class AgreementUI:
                     default_policy='decline')
         self.click_word(window_id, target, "Don't Send", TELEMETRY_TITLE)
         self.record('telemetry_dont_send_clicked')
+
+    def inspect_trial_options(self, windows):
+        licenses = [w for w in windows if w['title'] == 'Licenses']
+        if (not self.telemetry_attempted or self.trial_option_attempted or len(licenses) != 1
+                or any(w['title'] not in {'Welcome to CLion', 'Licenses'} for w in windows)):
+            raise RuntimeError('Trial inspection requires the approved test and audited startup windows')
+        self.trial_option_attempted = True
+        window_id = licenses[0]['id']
+        before = self.capture(window_id, 'licenses-before-trial.png')
+        target = trial_option(pixels(before), words(before))
+        # This selects the radio option only. No login, OAuth, Start Trial grant, or activation button.
+        self.click_word(window_id, target, 'Start trial radio option', 'Licenses')
+        self.record('trial_option_selected')
+        time.sleep(1)
+        after = self.capture(window_id, 'trial-page.png')
+        text = ' '.join(w['text'] for w in words(after))
+        (self.output / 'trial-page.txt').write_text(text + '\n')
+        self.record('trial_page_saved_without_login_or_activation')

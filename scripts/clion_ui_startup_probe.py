@@ -241,6 +241,12 @@ def main():
                         print('Approved User Agreement 1.4 Continue clicked; observing next window', flush=True)
                         time.sleep(1)
                         continue
+                    if (agreement is not None and agreement.telemetry_attempted and not agreement.trial_option_attempted
+                            and 'Licenses' in titles):
+                        agreement.inspect_trial_options(windows)
+                        print('Start trial radio option selected; saved actual trial page without login or activation', flush=True)
+                        time.sleep(1)
+                        continue
                     if (agreement is not None and agreement.attempted and not agreement.telemetry_attempted
                             and titles == ['Data Sharing']):
                         agreement.decline_telemetry(windows)
@@ -293,6 +299,7 @@ def main():
                       'agreement_1_4_attempted': agreement.attempted if agreement is not None else False,
                       'optional_telemetry_declined': (agreement.telemetry_attempted and titles != ['Data Sharing'])
                                                     if agreement is not None else False,
+                      'trial_option_selection_attempted': agreement.trial_option_attempted if agreement is not None else False,
                       'last_x11_window_titles': titles,
                       'wizard_build_run_verified': False}
             (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')

@@ -85,6 +85,23 @@ class AgreementAuthorizationTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             agreement.telemetry_decline_button(image, [w for w in ocr if w['text'] != "Don't"])
 
+    @unittest.skipUnless(shutil.which('convert') and shutil.which('tesseract'), 'Needs CI OCR tools')
+    def test_trial_radio_can_only_be_selected_in_audited_unactivated_window(self):
+        original = ROOT / 'tests/fixtures/clion-ui/licenses-before-trial.png'
+        image = agreement.pixels(original)
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            screenshot = Path(directory) / 'licenses.png'
+            shutil.copyfile(original, screenshot)
+            ocr = agreement.words(screenshot)
+        target = agreement.trial_option(image, ocr)
+        self.assertEqual(target['text'], 'Start')
+        self.assertLess(agreement.box(target)[1], 50)
+        width, height, data = image
+        with self.assertRaises(RuntimeError):
+            agreement.trial_option((width, height, bytes([data[0] ^ 1]) + data[1:]), ocr)
+        with self.assertRaises(RuntimeError):
+            agreement.trial_option(image, [w for w in ocr if w['text'] != 'trial'])
+
 
 if __name__ == '__main__':
     unittest.main()
