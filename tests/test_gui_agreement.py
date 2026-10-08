@@ -102,6 +102,65 @@ class AgreementAuthorizationTest(unittest.TestCase):
         # Runner OCR omits this radio label entirely. Exact known pixels still locate it.
         self.assertEqual(agreement.trial_option(image, []), target)
 
+    @unittest.skipUnless(shutil.which('convert'), 'Needs screenshot tools')
+    def test_trial_claim_requires_exact_audited_button(self):
+        image = agreement.pixels(ROOT / 'tests/fixtures/clion-ui/trial-page-before-claim.png')
+        target = agreement.trial_start_button(image)
+        self.assertEqual(target['text'], 'Start Trial')
+        self.assertEqual(agreement.box(target), (274, 189, 92, 25))
+        width, height, data = image
+        with self.assertRaises(RuntimeError):
+            agreement.trial_start_button((width, height, bytes([data[0]^1])+data[1:]))
+
+    def test_claim_marker_precedes_input_and_failures_never_repeat(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            ui = agreement.AgreementUI.__new__(agreement.AgreementUI)
+            ui.output = Path(directory)
+            ui.trial_option_attempted = True
+            ui.trial_start_attempted = False
+            windows = [{'title': 'Licenses', 'id': '0x123'}]
+            def fail_capture(*args):
+                self.assertTrue((ui.output / 'trial-start-once.json').exists())
+                raise RuntimeError('capture failed before input')
+            with patch.object(ui, 'capture', side_effect=fail_capture), patch.object(ui, 'click_word') as click:
+                with self.assertRaises(RuntimeError):
+                    ui.start_trial_once(windows)
+                with self.assertRaises(RuntimeError):
+                    ui.start_trial_once(windows)
+                click.assert_not_called()
+            # A restarted controller cannot reuse the output directory's single-claim marker.
+            with patch.object(agreement, 'check_authorization'), patch.object(agreement, 'verify_bundled_agreement'):
+                with self.assertRaisesRegex(RuntimeError, 'already attempted'):
+                    agreement.AgreementUI(ROOT, ui.output, {}, 'unused')
+
+    def test_claim_can_click_only_once_even_if_input_times_out(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            ui = agreement.AgreementUI.__new__(agreement.AgreementUI)
+            ui.output = Path(directory)
+            ui.trial_option_attempted = True
+            ui.trial_start_attempted = False
+            windows = [{'title': 'Licenses', 'id': '0x123'}]
+            with patch.object(ui, 'capture', return_value=Path('unused')), \
+                 patch.object(agreement, 'pixels'), patch.object(agreement, 'trial_start_button', return_value={}), \
+                 patch.object(ui, 'click_word', side_effect=subprocess.TimeoutExpired('xdotool', 5)) as click:
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    ui.start_trial_once(windows)
+                with self.assertRaises(RuntimeError):
+                    ui.start_trial_once(windows)
+                self.assertEqual(click.call_count, 1)
+
+    def test_wizard_labels_require_unique_adjacent_confident_current_ocr(self):
+        def word(text, left):
+            return {'text': text, 'conf': '95', 'left': str(left*2), 'top': '80',
+                    'width': '60', 'height': '24'}
+        words = [word('New', 10), word('Project', 45)]
+        self.assertEqual(agreement.unique_ui_label(words, ('New', 'Project'))['text'], 'New Project')
+        self.assertEqual(agreement.unique_ui_label([word('Xege', 40)], ('Xege',))['text'], 'Xege')
+        for ambiguous in [[], words+words, [word('New', 10), word('Project', 200)],
+                          [{**word('Xege', 40), 'conf': '20'}]]:
+            with self.assertRaises(RuntimeError):
+                agreement.unique_ui_label(ambiguous, ('Xege',) if len(ambiguous)==1 else ('New', 'Project'))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -50,7 +50,7 @@ jobs:
           AGREEMENT_AUTHORIZATION: ${{ github.event.action == 'labeled' && github.event.pull_request.number == 8 && github.event.sender.login == 'wysaid' && github.event.label.name == format('ege14-{0}', github.event.pull_request.head.sha) && github.event.label.name || '' }}
         run: |
           dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' \
-            python3 scripts/clion_ui_startup_probe.py --timeout 600 --agreement-authorization "$AGREEMENT_AUTHORIZATION"
+            python3 scripts/clion_ui_startup_probe.py --timeout 600 --agreement-authorization "$AGREEMENT_AUTHORIZATION" ${AGREEMENT_AUTHORIZATION:+--start-trial-once --inspect-wizard-on-welcome}
       - name: Save every outcome including blocking dialogs and startup logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -58,7 +58,5 @@ jobs:
           name: clion-ui-startup-observation
           path: |
             build/gui-startup-probe/**
-            build/idea-sandbox/system-uiTest/log/**
-            build/idea-sandbox/system/log/**
           if-no-files-found: warn
           retention-days: 7

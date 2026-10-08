@@ -1,6 +1,6 @@
 """One manually authorized, expiring acceptance of the pinned User Agreement 1.4 UI.
 
-This module never activates a license, starts/resets a trial, or enters account data.
+This module can claim one explicitly authorized official trial, never reset it or enter account data.
 Coordinates come from current OCR or exact visual templates; the unchecked checkbox is matched as
 a visual prerequisite, and its checkmark is verified before clicking Continue.
 """
@@ -22,6 +22,7 @@ TITLE = 'CLion User Agreement'
 TELEMETRY_TITLE = 'Data Sharing'
 TELEMETRY_BODY_SHA256 = '40b4002317c89d205f29160ab089f9b879ac9a75da9c7a7e13aa2adca7154cbe'
 LICENSES_PIXELS_SHA256 = 'f3dbeaee6093ce504f8059e9536e370fa7d34f24dd72a54f031c97b6d07bb959'
+TRIAL_PAGE_PIXELS_SHA256 = '8c119cdf6c3c80005e966a9e0865d01f7c7c7dfc9162d1e054b736f222fad4a5'
 
 
 def check_authorization(reference, env, now=None):
@@ -173,6 +174,51 @@ def trial_option(image, ocr=None):
             'width': '128', 'height': '40'}
 
 
+def trial_start_button(image):
+    width, height, data = image
+    if (width, height) != (814, 455) or hashlib.sha256(data).hexdigest() != TRIAL_PAGE_PIXELS_SHA256:
+        raise RuntimeError('Trial claim page differs from the audited no-login, no-payment prompt')
+    fixture = pixels(Path(__file__).resolve().parents[1] / 'tests/fixtures/clion-ui/trial-page-before-claim.png')
+    if hashlib.sha256(fixture[2]).hexdigest() != TRIAL_PAGE_PIXELS_SHA256:
+        raise RuntimeError('Audited trial claim fixture changed')
+    needle = region(fixture, 274, 189, 92, 25)
+    rows = [needle[r*92*3:(r+1)*92*3] for r in range(25)]
+    matches = []
+    for y in range(50, height-25+1):
+        for x in range(width-92+1):
+            if all(data[((y+r)*width+x)*3:((y+r)*width+x+92)*3] == row
+                   for r, row in enumerate(rows)):
+                matches.append((x, y))
+    if len(matches) != 1:
+        raise RuntimeError('Start Trial claim button is not uniquely present in the actual window')
+    x, y = matches[0]
+    return {'text': 'Start Trial', 'left': str(x*2), 'top': str(y*2), 'width': '184', 'height': '50'}
+
+
+def unique_ui_label(ocr, tokens):
+    """Locate one high-confidence adjacent rendered label in current window-relative OCR."""
+    candidates = []
+    for index, word in enumerate(ocr):
+        group = ocr[index:index+len(tokens)]
+        if len(group) != len(tokens) or any(w['text'].lower() != token.lower()
+                or float(w.get('conf', 0)) < 85 for w, token in zip(group, tokens)):
+            continue
+        boxes = [box(w) for w in group]
+        if any(abs(y-boxes[0][1]) > 3 for _, y, _, _ in boxes):
+            continue
+        if any(not 0 <= boxes[n+1][0]-(boxes[n][0]+boxes[n][2]) <= 12
+               for n in range(len(boxes)-1)):
+            continue
+        x, y = boxes[0][:2]
+        right = max(bx+bw for bx, _, bw, _ in boxes)
+        bottom = max(by+bh for _, by, _, bh in boxes)
+        candidates.append({'text': ' '.join(tokens), 'left': str(x*2), 'top': str(y*2),
+                           'width': str((right-x)*2), 'height': str((bottom-y)*2)})
+    if len(candidates) != 1:
+        raise RuntimeError('Actual UI label is missing or ambiguous: ' + ' '.join(tokens))
+    return candidates[0]
+
+
 class AgreementUI:
     def __init__(self, root, output, env, reference):
         check_authorization(reference, env)
@@ -183,6 +229,10 @@ class AgreementUI:
         self.attempted = False
         self.telemetry_attempted = False
         self.trial_option_attempted = False
+        self.trial_start_attempted = False
+        self.trial_start_time = None
+        if (output / 'trial-start-once.json').exists():
+            raise RuntimeError('Trial claim was already attempted in this run; refusing another attempt')
         self.clicks = 0
         fixture = root / 'tests/fixtures/clion-ui/user-agreement-1.4.png'
         if hashlib.sha256(fixture.read_bytes()).hexdigest() != '7975e25994d9974278be94e4dec47c8d22b06fd96ff9eaea15d575d3f3318c19':
@@ -275,3 +325,19 @@ class AgreementUI:
         text = ' '.join(w['text'] for w in words(after))
         (self.output / 'trial-page.txt').write_text(text + '\n')
         self.record('trial_page_saved_without_login_or_activation')
+
+    def start_trial_once(self, windows):
+        licenses = [w for w in windows if w['title'] == 'Licenses']
+        if (not self.trial_option_attempted or self.trial_start_attempted or len(licenses) != 1
+                or any(w['title'] not in {'Welcome to CLion', 'Licenses'} for w in windows)):
+            raise RuntimeError('Trial claim requires the approved inspected page and one attempt')
+        # Durable before input: timeouts, process errors and observation loops must never repeat the claim.
+        with (self.output / 'trial-start-once.json').open('x') as marker:
+            marker.write('{"trial_claim_click_limit":1}\n')
+        self.trial_start_attempted = True
+        self.trial_start_time = time.monotonic()
+        window_id = licenses[0]['id']
+        before = self.capture(window_id, 'trial-claim-before.png')
+        target = trial_start_button(pixels(before))
+        self.click_word(window_id, target, 'Start Trial claim button', 'Licenses')
+        self.record('official_trial_claim_clicked_once')

@@ -163,12 +163,75 @@ def stop_sandbox_ide(sig=signal.SIGTERM):
                 pass
 
 
+def inspect_wizard(agreement, windows, inventory_reader, env, runtime, output):
+    """Two bounded normal UI selections; no project creation or generator invocation."""
+    from clion_ui_agreement import words, unique_ui_label
+    stage = 'welcome_evidence_saved'
+    try:
+        if len(windows) != 1 or windows[0]['title'] != 'Welcome to CLion':
+            raise RuntimeError('Wizard inspection requires one verified Welcome window')
+        image = agreement.capture(windows[0]['id'], 'welcome-before-new-project.png')
+        target = unique_ui_label(words(image), ('New', 'Project'))
+        agreement.click_word(windows[0]['id'], target, 'New Project', 'Welcome to CLion')
+        stage = 'new_project_clicked'
+        deadline = time.monotonic() + 25
+        while time.monotonic() < deadline:
+            windows = inventory_reader.observe(env)
+            if windows is None:
+                time.sleep(1)
+                continue
+            dialogs = [w for w in windows if w['title'] == 'New Project']
+            if dialogs and all(w['title'] in {'Welcome to CLion', 'New Project'} for w in windows):
+                if len(dialogs) != 1:
+                    raise RuntimeError('Multiple New Project dialogs')
+                image = agreement.capture(dialogs[0]['id'], 'new-project-before-xege.png')
+                target = unique_ui_label(words(image), ('Xege',))
+                # The project-type choice must be visibly in the left-hand list.
+                if int(target['left']) // 2 >= 260:
+                    raise RuntimeError('Xege label is outside the project-type list')
+                agreement.click_word(dialogs[0]['id'], target, 'Xege project type', 'New Project')
+                stage = 'xege_selected'
+                time.sleep(2)
+                agreement.capture(dialogs[0]['id'], 'xege-wizard.png')
+                break
+            if any(w['title'] not in {'Welcome to CLion', 'New Project'} for w in windows):
+                raise RuntimeError('Unexpected window after New Project')
+            time.sleep(1)
+        else:
+            raise RuntimeError('New Project dialog was not observed within 25 seconds')
+    except (OSError, subprocess.SubprocessError, RuntimeError) as error:
+        (output / 'wizard-inspection-stop.txt').write_text(str(error) + '\n')
+        print(f'Same-instance wizard inspection stopped at {stage}: {error}', flush=True)
+    finally:
+        evidence = output / 'same-instance-wizard'
+        evidence.mkdir(exist_ok=True)
+        classpath = os.pathsep.join(str(p) for p in sorted(runtime.glob('*.jar')))
+        with (evidence / 'robot-client.log').open('w') as log:
+            try:
+                subprocess.run(['java', '-cp', classpath, 'org.xege.probe.StartupObserver', str(evidence)],
+                               env=env, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=35)
+            except (OSError, subprocess.SubprocessError) as error:
+                log.write(str(error) + '\n')
+        subprocess.run(['import', '-silent', '-window', 'root', str(evidence / 'desktop.png')],
+                       env=env, check=True, timeout=5)
+        (output / 'wizard-inspection.json').write_text(json.dumps({
+            'stage': stage, 'project_created': False, 'build_run_verified': False}) + '\n')
+    print(f'Same-instance wizard stage: {stage}; no project build/run claimed', flush=True)
+    return stage
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--timeout', type=int, default=600)
     parser.add_argument('--agreement-authorization', default='',
                         help='Explicit expiring authorization for one manual User Agreement 1.4 test')
+    parser.add_argument('--start-trial-once', action='store_true')
+    parser.add_argument('--inspect-wizard-on-welcome', action='store_true')
     args = parser.parse_args()
+    if (args.start_trial_once or args.inspect_wizard_on_welcome) and not args.agreement_authorization:
+        parser.error('Trial claim and wizard inspection require the explicit one-time authorization')
+    if args.inspect_wizard_on_welcome and not args.start_trial_once:
+        parser.error('Wizard inspection requires the successful single-claim flow')
     if sys.platform != 'linux' or not os.environ.get('DISPLAY') or not 1 <= args.timeout <= 600:
         parser.error('Use Linux under Xvfb with a timeout of 1..600 seconds')
     for tool in ['openbox', 'wmctrl', 'import', 'convert', 'tesseract', 'java']:
@@ -192,6 +255,7 @@ def main():
     deadline = started + args.timeout
     count = 0
     titles = []
+    wizard_stage = 'not_attempted'
     inventory_reader = WindowInventory(output / 'wmctrl-observations.jsonl')
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     with (output / 'window-manager.log').open('w') as wm_log, (output / 'clion-launch.log').open('w') as ide_log:
@@ -247,12 +311,30 @@ def main():
                         print('Start trial radio option selected; saved actual trial page without login or activation', flush=True)
                         time.sleep(1)
                         continue
+                    if (agreement is not None and args.start_trial_once and agreement.trial_option_attempted
+                            and not agreement.trial_start_attempted and 'Licenses' in titles):
+                        agreement.start_trial_once(windows)
+                        print('Official Start Trial claim clicked once; observing result without any retry', flush=True)
+                        time.sleep(2)
+                        continue
                     if (agreement is not None and agreement.attempted and not agreement.telemetry_attempted
                             and titles == ['Data Sharing']):
                         agreement.decline_telemetry(windows)
                         print("Audited optional Data Sharing: Don't Send clicked; observing next window", flush=True)
                         time.sleep(1)
                         continue
+                    if (agreement is not None and agreement.trial_start_attempted
+                            and set(titles) <= {'Welcome to CLion', 'Licenses'} and 'Licenses' in titles):
+                        # The network request may take time. Observe only; never click a second time.
+                        visible = re.sub(r'\s+', ' ', text).lower()
+                        blocking = re.search(r'log in to|sign in to|expired|already (?:used|claimed)|'
+                                             r'not eligible|cannot start|unable to|payment|credit card|'
+                                             r'license agreement|user agreement|privacy policy', visible)
+                        if not blocking and time.monotonic()-agreement.trial_start_time < 120:
+                            print('Trial result pending; read-only observation (single claim already attempted)', flush=True)
+                            time.sleep(min(5, max(0, deadline-time.monotonic())))
+                            continue
+                        outcome = 'trial_activation_blocked_or_timeout'
                     print(f'Observation {count}: {outcome}; robot_observed={observed}', flush=True)
                     break
                 # Try the loopback tree even when an early modal prevents the plugin starting.
@@ -273,6 +355,13 @@ def main():
                         log.write(f'Observation {count}: {error}\n')
                 outcome = classify(text, observed, titles)
                 print(f'Observation {count}: {outcome}; robot_observed={observed}', flush=True)
+                if outcome == 'welcome_observed' and agreement is not None and agreement.trial_start_attempted:
+                    (output / 'trial-result.json').write_text(json.dumps({
+                        'official_trial_claim_attempted': True, 'welcome_observed': True,
+                        'robot_observed': observed, 'window_titles': titles}) + '\n')
+                    print('Single trial claim reached Welcome with RemoteRobot; same-instance evidence saved', flush=True)
+                    if args.inspect_wizard_on_welcome:
+                        wizard_stage = inspect_wizard(agreement, windows, inventory_reader, env, runtime, output)
                 if outcome in {'blocked_agreement_or_activation', 'unknown_window_detected', 'welcome_observed'}:
                     break
                 if ide.poll() is not None:
@@ -300,6 +389,8 @@ def main():
                       'optional_telemetry_declined': (agreement.telemetry_attempted and titles != ['Data Sharing'])
                                                     if agreement is not None else False,
                       'trial_option_selection_attempted': agreement.trial_option_attempted if agreement is not None else False,
+                      'official_trial_claim_attempted': agreement.trial_start_attempted if agreement is not None else False,
+                      'same_instance_wizard_stage': wizard_stage,
                       'last_x11_window_titles': titles,
                       'wizard_build_run_verified': False}
             (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
