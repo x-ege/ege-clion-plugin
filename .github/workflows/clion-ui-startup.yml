@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/clion-ui-startup.yml'
       - 'scripts/clion_ui_startup_probe.py'
+      - 'tests/test_gui_startup_probe.py'
+      - 'tests/fixtures/clion-ui/**'
       - 'src/guiProbe/**'
 
 permissions:
@@ -30,7 +32,9 @@ jobs:
       - name: Install official runner GUI observation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb xauth openbox imagemagick tesseract-ocr dbus-x11 libxi6 libxtst6 libxrender1 libfreetype6 fontconfig fonts-dejavu-core libgtk-3-0t64
+          sudo apt-get install -y xvfb xauth openbox wmctrl imagemagick tesseract-ocr dbus-x11 libxi6 libxtst6 libxrender1 libfreetype6 fontconfig fonts-dejavu-core libgtk-3-0t64
+      - name: Verify blocking-dialog recognition against the original screenshot
+        run: python3 -m unittest discover -s tests -p test_gui_startup_probe.py -v
       - name: Prepare current plugin and matching Robot sandbox without launching GUI
         run: |
           mkdir -p build/gui-startup-probe

@@ -21,12 +21,43 @@ ROOT = Path(__file__).resolve().parents[1]
 ROBOT_VERSION = '0.11.23'
 
 
-def classify(text, robot_observed=False):
+def parse_windows(listing):
+    """Read wmctrl's EWMH window inventory without changing focus or geometry."""
+    windows = []
+    for line in listing.splitlines():
+        fields = line.split(None, 7)
+        if len(fields) < 8 or not re.fullmatch(r'0x[0-9a-fA-F]+', fields[0]):
+            raise ValueError(f'Malformed X11 window inventory: {line!r}')
+        desktop, x, y, width, height = map(int, fields[1:6])
+        if width <= 0 or height <= 0:
+            raise ValueError('Invalid X11 window geometry')
+        windows.append({'id': fields[0], 'title': fields[7], 'desktop': desktop,
+                        'x': x, 'y': y, 'width': width, 'height': height})
+    return windows
+
+
+def ocr_screenshot(screenshot, env=None, timeout=15):
+    """Keep the raw evidence; trim desktop padding and normalize dark dialogs for OCR."""
+    normalized = screenshot.with_suffix('.ocr.png')
+    subprocess.run(['convert', str(screenshot), '-trim', '+repage', '-colorspace', 'Gray',
+                    '-negate', '-resize', '200%', str(normalized)], env=env,
+                   capture_output=True, text=True, check=True, timeout=timeout)
+    result = subprocess.run(['tesseract', str(normalized), 'stdout', '-l', 'eng', '--psm', '11'],
+                            env=env, capture_output=True, text=True, check=True, timeout=timeout)
+    return result.stdout
+
+
+def classify(text, robot_observed=False, window_titles=()):
+    text += '\n' + '\n'.join(window_titles)
     visible = re.sub(r'\s+', ' ', html.unescape(text)).lower()
     if re.search(r'user agreement|license agreement|privacy policy|data sharing|'
                  r'activate clion|activation|start trial|license server|evaluation license|'
                  r'log in to jetbrains|jetbrains account', visible):
         return 'blocked_agreement_or_activation'
+    # Unknown windows must never be mistaken for a successful welcome screen.
+    for title in window_titles:
+        if not re.fullmatch(r'CLion(?: \d{4}\.\d+(?:\.\d+)?)?|Welcome to CLion', title.strip(), re.I):
+            return 'unknown_window_detected'
     if robot_observed and re.search(r'welcomeframe|welcome to clion', visible):
         return 'welcome_observed'
     return 'starting_or_unknown_window'
@@ -96,7 +127,7 @@ def main():
     args = parser.parse_args()
     if sys.platform != 'linux' or not os.environ.get('DISPLAY') or not 1 <= args.timeout <= 600:
         parser.error('Use Linux under Xvfb with a timeout of 1..600 seconds')
-    for tool in ['openbox', 'import', 'tesseract', 'java']:
+    for tool in ['openbox', 'wmctrl', 'import', 'convert', 'tesseract', 'java']:
         if not shutil.which(tool):
             raise RuntimeError(f'Missing observation tool: {tool}')
     checksum, runtime = preflight()
@@ -110,6 +141,7 @@ def main():
     started = time.monotonic()
     deadline = started + args.timeout
     count = 0
+    titles = []
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     with (output / 'window-manager.log').open('w') as wm_log, (output / 'clion-launch.log').open('w') as ide_log:
         try:
@@ -122,11 +154,29 @@ def main():
                 screenshot = output / f'screen-{count:03}.png'
                 subprocess.run(['import', '-silent', '-window', 'root', str(screenshot)],
                                env=env, check=True, timeout=min(10, max(1, deadline-time.monotonic())))
-                ocr = subprocess.run(['tesseract', str(screenshot), 'stdout', '-l', 'eng'], env=env,
-                                     capture_output=True, text=True, check=True,
-                                     timeout=min(15, max(1, deadline-time.monotonic())))
-                (output / f'screen-{count:03}.txt').write_text(ocr.stdout)
-                text = ocr.stdout
+                inventory = subprocess.run(['wmctrl', '-lG'], env=env, capture_output=True,
+                                           text=True, check=True, timeout=5)
+                windows = parse_windows(inventory.stdout)
+                (output / f'windows-{count:03}.json').write_text(json.dumps(windows, indent=2) + '\n')
+                # X11 titles work before RemoteRobot's appFrameCreated callback starts its server.
+                titles = [window['title'] for window in windows]
+                try:
+                    text = ocr_screenshot(screenshot, env, min(15, max(1, deadline-time.monotonic())))
+                except (OSError, subprocess.SubprocessError) as error:
+                    # Title detection must still stop at early dialogs if OCR fails.
+                    text = ''
+                    with (output / 'ocr-errors.log').open('a') as log:
+                        log.write(f'Observation {count}: {error}\n')
+                (output / f'screen-{count:03}.txt').write_text(text)
+                # Save each window at its actual ID, without guessed coordinates or UI actions.
+                for window in windows:
+                    subprocess.run(['import', '-silent', '-window', window['id'],
+                                    str(output / f'window-{count:03}-{window["id"]}.png')],
+                                   env=env, check=True, timeout=5)
+                outcome = classify(text, observed, titles)
+                if outcome in {'blocked_agreement_or_activation', 'unknown_window_detected'}:
+                    print(f'Observation {count}: {outcome}; robot_observed={observed}', flush=True)
+                    break
                 # Try the loopback tree even when an early modal prevents the plugin starting.
                 try:
                     with opener.open('http://127.0.0.1:8082/', timeout=3) as response:
@@ -143,9 +193,9 @@ def main():
                 except (OSError, subprocess.SubprocessError) as error:
                     with (output / 'robot-connection.log').open('a') as log:
                         log.write(f'Observation {count}: {error}\n')
-                outcome = classify(text, observed)
+                outcome = classify(text, observed, titles)
                 print(f'Observation {count}: {outcome}; robot_observed={observed}', flush=True)
-                if outcome in {'blocked_agreement_or_activation', 'welcome_observed'}:
+                if outcome in {'blocked_agreement_or_activation', 'unknown_window_detected', 'welcome_observed'}:
                     break
                 if ide.poll() is not None:
                     outcome = 'ide_launcher_exited'
@@ -164,6 +214,7 @@ def main():
                       'startup_limit_seconds': args.timeout, 'robot_version': ROBOT_VERSION,
                       'robot_hierarchy_and_screenshot_observed': observed, 'zip_sha256': checksum,
                       'sandbox_jar_matches_formal_zip': True, 'ui_actions_performed': 0,
+                      'last_x11_window_titles': titles,
                       'wizard_build_run_verified': False}
             (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
             print(json.dumps(report, indent=2), flush=True)
