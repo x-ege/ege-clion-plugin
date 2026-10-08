@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Observe a fresh Linux CLion sandbox. Never click, accept dialogs or enter input."""
+"""Observe a fresh Linux CLion sandbox; default operation never sends UI input."""
 import argparse
 import hashlib
 import html
@@ -166,6 +166,8 @@ def stop_sandbox_ide(sig=signal.SIGTERM):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--timeout', type=int, default=600)
+    parser.add_argument('--agreement-authorization', default='',
+                        help='Explicit expiring authorization for one manual User Agreement 1.4 test')
     args = parser.parse_args()
     if sys.platform != 'linux' or not os.environ.get('DISPLAY') or not 1 <= args.timeout <= 600:
         parser.error('Use Linux under Xvfb with a timeout of 1..600 seconds')
@@ -175,6 +177,12 @@ def main():
     checksum, runtime = preflight()
     output = ROOT / 'build/gui-startup-probe'
     output.mkdir(parents=True, exist_ok=True)
+    agreement = None
+    if args.agreement_authorization:
+        from clion_ui_agreement import AgreementUI
+        if not shutil.which('xdotool') or not shutil.which('identify'):
+            raise RuntimeError('Missing authorized UI test tools')
+        agreement = AgreementUI(ROOT, output, os.environ, args.agreement_authorization)
     # The server URL and client constructor are hard-coded loopback; no tunnels or public binding.
     env = dict(os.environ, LC_ALL='C.UTF-8')
     wm = ide = None
@@ -227,6 +235,12 @@ def main():
                                    env=env, check=True, timeout=5)
                 outcome = classify(text, observed, titles)
                 if outcome in {'blocked_agreement_or_activation', 'unknown_window_detected'}:
+                    if (agreement is not None and not agreement.attempted
+                            and titles == ['CLion User Agreement']):
+                        agreement.accept(windows)
+                        print('Approved User Agreement 1.4 Continue clicked; observing next window', flush=True)
+                        time.sleep(1)
+                        continue
                     print(f'Observation {count}: {outcome}; robot_observed={observed}', flush=True)
                     break
                 # Try the loopback tree even when an early modal prevents the plugin starting.
@@ -268,7 +282,9 @@ def main():
             report = {'outcome': outcome, 'elapsed_seconds': round(time.monotonic()-started, 1),
                       'startup_limit_seconds': args.timeout, 'robot_version': ROBOT_VERSION,
                       'robot_hierarchy_and_screenshot_observed': observed, 'zip_sha256': checksum,
-                      'sandbox_jar_matches_formal_zip': True, 'ui_actions_performed': 0,
+                      'sandbox_jar_matches_formal_zip': True,
+                      'ui_actions_performed': agreement.clicks if agreement is not None else 0,
+                      'agreement_1_4_attempted': agreement.attempted if agreement is not None else False,
                       'last_x11_window_titles': titles,
                       'wizard_build_run_verified': False}
             (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')

@@ -3,10 +3,13 @@ name: CLion GUI startup probe
 on:
   pull_request:
     branches: [master]
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - '.github/workflows/clion-ui-startup.yml'
       - 'scripts/clion_ui_startup_probe.py'
+      - 'scripts/clion_ui_agreement.py'
       - 'tests/test_gui_startup_probe.py'
+      - 'tests/test_gui_agreement.py'
       - 'tests/fixtures/clion-ui/**'
       - 'src/guiProbe/**'
 
@@ -15,6 +18,7 @@ permissions:
 
 jobs:
   startup:
+    if: github.event.action != 'labeled' || github.event.label.name == format('ege14-{0}', github.event.pull_request.head.sha)
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -32,18 +36,21 @@ jobs:
       - name: Install official runner GUI observation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb xauth openbox wmctrl imagemagick tesseract-ocr dbus-x11 libxi6 libxtst6 libxrender1 libfreetype6 fontconfig fonts-dejavu-core libgtk-3-0t64
+          sudo apt-get install -y xvfb xauth openbox wmctrl xdotool imagemagick tesseract-ocr dbus-x11 libxi6 libxtst6 libxrender1 libfreetype6 fontconfig fonts-dejavu-core libgtk-3-0t64
       - name: Verify blocking-dialog recognition against the original screenshot
-        run: python3 -m unittest discover -s tests -p test_gui_startup_probe.py -v
+        run: python3 -m unittest discover -s tests -p 'test_gui_*.py' -v
       - name: Prepare current plugin and matching Robot sandbox without launching GUI
         run: |
           mkdir -p build/gui-startup-probe
           ./gradlew --no-daemon buildPlugin stageGuiProbeRuntime prepareUiTestingSandbox --console=plain 2>&1 | tee build/gui-startup-probe/preparation.log
-      - name: Observe CLion startup for at most ten minutes without accepting dialogs
+      - name: Observe CLion startup with default read-only or explicit one-time agreement authorization
         timeout-minutes: 12
+        env:
+          # Only the exact SHA label added by the authorized owner can opt in. PR pushes stay read-only.
+          AGREEMENT_AUTHORIZATION: ${{ github.event.action == 'labeled' && github.event.pull_request.number == 8 && github.event.sender.login == 'wysaid' && github.event.label.name == format('ege14-{0}', github.event.pull_request.head.sha) && github.event.label.name || '' }}
         run: |
           dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' \
-            python3 scripts/clion_ui_startup_probe.py --timeout 600
+            python3 scripts/clion_ui_startup_probe.py --timeout 600 --agreement-authorization "$AGREEMENT_AUTHORIZATION"
       - name: Save every outcome including blocking dialogs and startup logs
         if: always()
         uses: actions/upload-artifact@v4
