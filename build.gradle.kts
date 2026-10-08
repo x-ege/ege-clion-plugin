@@ -108,6 +108,11 @@ val verifyBundledAssets by tasks.registering(Exec::class) {
     commandLine("python3", "scripts/package_ege_source.py", "--check")
 }
 tasks.processResources { dependsOn(verifyBundledAssets) }
+val testSourcePackaging by tasks.registering(Exec::class) {
+    group = "verification"
+    commandLine("python3", "-m", "unittest", "discover", "-s", "tests", "-p", "test_source_packaging.py", "-v")
+}
+tasks.test { dependsOn(testSourcePackaging) }
 
 // A tiny test launcher, without unpacked plugin classes/resources, exercises the ZIP in CI.
 val nativeSmokeTool by tasks.registering(Jar::class) {

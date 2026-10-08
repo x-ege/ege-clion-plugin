@@ -25,7 +25,9 @@ EGE 固定为 `09387a806e3d8cafde84bf0bd91b775d681b27ac`，ccap 固定为
 camera 示例包含辅助头文件及 macOS 相机用途声明。已由 CLion 管理的 CMake 项目会在刷新后重载；
 菜单新建项目仍通过 CLion 的 open/import 流程打开。
 
-维护资源时从**独立、干净**的固定版本 checkout 更新，不能使用包含本机改动的工作副本：
+维护资源时从**独立、tracked 文件干净**的固定版本 checkout 更新，不能使用包含本机改动的工作副本。
+更新器从 EGE 和 ccap 各自固定 Git tree 读取 tracked blob；ignored/untracked 文件不会进入 bundle，
+符号链接、危险路径和编译产物会被拒绝：
 
 ```sh
 ./update_ege_src.sh /path/to/pinned-xege-checkout
